@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CSV整形ツール</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f3f5f8;
+      color: #1f2937;
+      margin: 0;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 410px minmax(0, 1fr);
+    }
+
+    .sidebar {
+      background: #ffffff;
+      border-right: 1px solid #e5e7eb;
+      padding: 28px 24px;
+      overflow-y: auto;
+    }
+
+    .main {
+      padding: 28px;
+      overflow: hidden;
+    }
+
+    h1 {
+      font-size: 25px;
+      line-height: 1.35;
+      margin: 0 0 8px;
+      letter-spacing: 0.02em;
+    }
+
+    .lead {
+      color: #6b7280;
+      font-size: 14px;
+      line-height: 1.7;
+      margin-bottom: 22px;
+    }
+
+    .panel {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      padding: 18px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+
+    .panel-title {
+      font-size: 15px;
+      font-weight: 800;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge {
+      width: 24px;
+      height: 24px;
+      border-radius: 999px;
+      background: #111827;
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      flex: 0 0 auto;
+    }
+
+    .tool-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .tool-card {
+      width: 100%;
+      text-align: left;
+      border: 1px solid #e5e7eb;
+      background: #f8fafc;
+      border-radius: 14px;
+      padding: 14px;
+      cursor: pointer;
+      transition: 0.15s ease;
+      display: block;
+      color: #1f2937;
+    }
+
+    .tool-card:hover {
+      border-color: #111827;
+      transform: translateY(-1px);
+      background: #ffffff;
+    }
+
+    .tool-card.active {
+      border-color: #111827;
+      background: #111827;
+      color: #ffffff;
+      box-shadow: 0 10px 22px rgba(17, 24, 39, 0.18);
+    }
+
+    .tool-card.disabled {
+      cursor: not-allowed;
+      opacity: 0.58;
+      background: #f9fafb;
+    }
+
+    .tool-card.disabled:hover {
+      transform: none;
+      border-color: #e5e7eb;
+    }
+
+    .tool-name {
+      font-size: 14px;
+      font-weight: 900;
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tool-desc {
+      font-size: 12px;
+      line-height: 1.55;
+      color: #64748b;
+    }
+
+    .tool-card.active .tool-desc { color: #d1d5db; }
+
+    .tag {
+      font-size: 11px;
+      font-weight: 800;
+      border-radius: 999px;
+      padding: 4px 8px;
+      background: #e5e7eb;
+      color: #4b5563;
+      white-space: nowrap;
+    }
+
+    .tool-card.active .tag {
+      background: rgba(255,255,255,0.18);
+      color: #ffffff;
+    }
+
+    .file-drop {
+      border: 2px dashed #cbd5e1;
+      border-radius: 14px;
+      background: #f8fafc;
+      padding: 18px;
+      text-align: center;
+      transition: 0.15s ease;
+    }
+
+    .file-drop:hover {
+      border-color: #2563eb;
+      background: #eff6ff;
+    }
+
+    input[type="file"] {
+      width: 100%;
+      margin-top: 12px;
+      font-size: 13px;
+    }
+
+    .button-row {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    button.action {
+      border: none;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.15s ease;
+    }
+
+    button.action:hover { transform: translateY(-1px); }
+    button.action:disabled { cursor: not-allowed; opacity: 0.45; transform: none; }
+
+    .primary { background: #111827; color: #fff; }
+    .secondary { background: #e8eef7; color: #1f2937; }
+    .danger { background: #fff1f2; color: #be123c; }
+
+    .status {
+      margin-top: 14px;
+      padding: 12px;
+      border-radius: 12px;
+      background: #f8fafc;
+      color: #475569;
+      font-size: 13px;
+      white-space: pre-line;
+      line-height: 1.65;
+      border: 1px solid #e5e7eb;
+    }
+
+    .success { color: #166534; background: #f0fdf4; border-color: #bbf7d0; }
+    .error { color: #991b1b; background: #fef2f2; border-color: #fecaca; }
+
+    .kv {
+      display: grid;
+      gap: 8px;
+      font-size: 13px;
+      color: #4b5563;
+      line-height: 1.6;
+    }
+
+    .kv div {
+      padding-bottom: 8px;
+      border-bottom: 1px solid #eef2f7;
+    }
+
+    .kv div:last-child { border-bottom: 0; padding-bottom: 0; }
+
+    code {
+      background: #eef2f7;
+      border-radius: 5px;
+      padding: 2px 5px;
+      font-size: 12px;
+    }
+
+    .main-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .main-title {
+      margin: 0;
+      font-size: 22px;
+    }
+
+    .preview-card {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 18px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      overflow: hidden;
+      height: calc(100vh - 108px);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .preview-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 18px;
+      background: #ffffff;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .preview-title {
+      font-weight: 800;
+      font-size: 15px;
+    }
+
+    .preview-note {
+      color: #6b7280;
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
+    .preview-count {
+      background: #f3f4f6;
+      border: 1px solid #e5e7eb;
+      border-radius: 999px;
+      padding: 7px 11px;
+      color: #4b5563;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .table-wrap {
+      overflow: auto;
+      flex: 1;
+      background: #ffffff;
+    }
+
+    table {
+      border-collapse: separate;
+      border-spacing: 0;
+      width: max-content;
+      min-width: 100%;
+      font-size: 13px;
+    }
+
+    th, td {
+      border-bottom: 1px solid #e5e7eb;
+      border-right: 1px solid #e5e7eb;
+      padding: 9px 10px;
+      white-space: nowrap;
+      vertical-align: top;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #f8fafc;
+      font-weight: 800;
+      color: #334155;
+    }
+
+    th:first-child, td:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 1;
+      background: #ffffff;
+    }
+
+    th:first-child {
+      z-index: 3;
+      background: #f8fafc;
+    }
+
+    .empty-preview {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #9ca3af;
+      text-align: center;
+      padding: 28px;
+      line-height: 1.8;
+    }
+
+    @media (max-width: 920px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { border-right: 0; border-bottom: 1px solid #e5e7eb; }
+      .main { padding: 18px; }
+      .preview-card { height: 70vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <h1>CSV整形ツール</h1>
+      <div class="lead">
+        左側で整形パターンを選択してCSVを読み込みます。右側に変更後のファイル内容をプレビューします。
+      </div>
+
+      <section class="panel">
+        <div class="panel-title"><span class="badge">1</span>整形パターンを選択</div>
+        <div class="tool-list">
+          <button class="tool-card active" type="button" data-tool="hrmos" onclick="selectTool('hrmos')">
+            <div class="tool-name">HRMOS勤怠CSV整形 <span class="tag">利用可能</span></div>
+            <div class="tool-desc">社員番号・氏名・メール・雇用形態・生年月日を、HRMOS取り込み用CSVに変換します。</div>
+          </button>
+          <button class="tool-card disabled" type="button" disabled>
+            <div class="tool-name">応募者CSV整形 <span class="tag">追加予定</span></div>
+            <div class="tool-desc">応募者データ、職種、店舗、メール送信対象などの整形用。</div>
+          </button>
+          <button class="tool-card disabled" type="button" disabled>
+            <div class="tool-name">勤怠CSV整形 <span class="tag">追加予定</span></div>
+            <div class="tool-desc">勤怠ローデータ、打刻データ、給与計算用CSVの整形用。</div>
+          </button>
+          <button class="tool-card disabled" type="button" disabled>
+            <div class="tool-name">広告レポートCSV整形 <span class="tag">追加予定</span></div>
+            <div class="tool-desc">Google広告、GA4、媒体別レポートなどの分析用整形。</div>
+          </button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title"><span class="badge">2</span>ファイルインポート</div>
+        <div class="file-drop">
+          <strong id="selectedToolLabel">HRMOS勤怠CSV整形</strong><br>
+          <span style="font-size:12px;color:#64748b;">CSV / TSV どちらも読み込み可能</span>
+          <input type="file" id="csvFile" accept=".csv,.tsv,text/csv,text/tab-separated-values">
+        </div>
+
+        <div class="button-row">
+          <button class="action primary" onclick="convertCsv()">選択中の形式で整形する</button>
+          <button class="action secondary" onclick="downloadCsv()" id="downloadBtn" disabled>整形済みCSVをダウンロード</button>
+          <button class="action danger" onclick="resetTool()">リセット</button>
+        </div>
+
+        <div class="status" id="status">整形パターンを選び、CSVファイルを選択してください。</div>
+      </section>
+
+      <section class="panel" id="toolDetailPanel">
+        <div class="panel-title"><span class="badge">3</span>選択中の整形内容</div>
+        <div class="kv" id="toolDetail"></div>
+      </section>
+    </aside>
+
+    <main class="main">
+      <div class="main-header">
+        <div>
+          <h2 class="main-title" id="mainTitle">整形後ファイルのプレビュー</h2>
+          <div class="lead" id="mainLead" style="margin:6px 0 0;">右側に出力CSVの内容を表示します。先頭50行までプレビューされます。</div>
+        </div>
+      </div>
+
+      <section class="preview-card">
+        <div class="preview-toolbar">
+          <div>
+            <div class="preview-title" id="previewTitle">HRMOS取り込み用CSV</div>
+            <div class="preview-note" id="previewNote">列順・固定値・空欄項目を反映済み</div>
+          </div>
+          <div class="preview-count" id="previewCount">未読み込み</div>
+        </div>
+        <div class="table-wrap" id="preview">
+          <div class="empty-preview">
+            左側で整形パターンを選び、CSVを選択して「整形する」を押すと、<br>
+            ここに変更後のファイル内容が表示されます。
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const tools = {
+      hrmos: {
+        name: "HRMOS勤怠CSV整形",
+        previewTitle: "HRMOS取り込み用CSV",
+        previewNote: "列順・固定値・空欄項目を反映済み",
+        downloadPrefix: "hrmos_import",
+        details: [
+          "元CSVの想定項目：社員番号、姓、名、セイ、メイ、メールアドレス、雇用形態、生年月日",
+          "正社員 → 雇用形態ID 1",
+          "アルバイト → 雇用形態ID 2",
+          "ログインID → 社員番号と同じ値",
+          "パスワード → 生年月日から / や - を除いた8桁の値",
+          "HRMOS勤怠メニュー → 表示する",
+          "権限ID → 5、権限 → 5. 一般利用者",
+          "備考、部門、拠点、第一〜第四承認者は常に空欄"
+        ]
+      }
+    };
+
+    const outputHeaders = [
+      "社員ID", "ログインID", "パスワード", "社員番号", "姓", "名", "セイ", "メイ", "メールアドレス",
+      "入社日", "休職日_開始_", "休職日_終了_", "退職日", "備考", "部門ID", "部門", "拠点ID", "拠点",
+      "雇用形態ID", "雇用形態", "第一承認者ID", "第一承認者", "第二承認者ID", "第二承認者",
+      "第三承認者ID", "第三承認者", "第四承認者ID", "第四承認者", "HRMOS勤怠メニュー", "権限ID", "権限"
+    ];
+
+    const alwaysBlankHeaders = [
+      "備考", "部門ID", "部門", "拠点ID", "拠点",
+      "第一承認者ID", "第一承認者", "第二承認者ID", "第二承認者",
+      "第三承認者ID", "第三承認者", "第四承認者ID", "第四承認者"
+    ];
+
+    let currentTool = "hrmos";
+    let convertedRows = [];
+
+    document.addEventListener("DOMContentLoaded", function() {
+      selectTool("hrmos");
+    });
+
+    function selectTool(toolKey) {
+      if (!tools[toolKey]) return;
+      currentTool = toolKey;
+
+      document.querySelectorAll(".tool-card").forEach(card => {
+        card.classList.toggle("active", card.dataset.tool === toolKey);
+      });
+
+      const tool = tools[toolKey];
+      document.getElementById("selectedToolLabel").textContent = tool.name;
+      document.getElementById("previewTitle").textContent = tool.previewTitle;
+      document.getElementById("previewNote").textContent = tool.previewNote;
+      document.getElementById("mainTitle").textContent = "整形後ファイルのプレビュー";
+      document.getElementById("toolDetail").innerHTML = tool.details.map(item => `<div>${escapeHtml(item)}</div>`).join("");
+
+      resetTool(false);
+    }
+
+    function convertCsv() {
+      const fileInput = document.getElementById("csvFile");
+      setStatus("CSVを読み込んでいます。", "");
+
+      if (!fileInput.files || fileInput.files.length === 0) {
+        setStatus("CSVファイルを選択してください。", "error");
+        return;
+      }
+
+      const file = fileInput.files[0];
+      const reader = new FileReader();
+
+      reader.onload = function(e) {
+        try {
+          const text = e.target.result;
+          const delimiter = detectDelimiter(text);
+          const rows = parseDelimitedText(text, delimiter);
+
+          if (rows.length === 0) {
+            setStatus("CSVの中身が空です。", "error");
+            return;
+          }
+
+          if (currentTool === "hrmos") {
+            convertHrmosRows(rows, delimiter);
+            return;
+          }
+
+          setStatus("この整形パターンはまだ準備中です。", "error");
+        } catch (error) {
+          console.error(error);
+          setStatus("CSVの整形中にエラーが発生しました。\n" + error.message, "error");
+        }
+      };
+
+      reader.onerror = function() {
+        setStatus("ファイルの読み込みに失敗しました。", "error");
+      };
+
+      reader.readAsText(file, "UTF-8");
+    }
+
+    function convertHrmosRows(rows, delimiter) {
+      const inputHeaders = rows[0].map(header => normalizeHeader(header));
+      const dataRows = rows.slice(1).filter(row => row.some(cell => String(cell).trim() !== ""));
+
+      convertedRows = [outputHeaders];
+
+      dataRows.forEach(row => {
+        const obj = {};
+        inputHeaders.forEach((header, index) => {
+          obj[header] = row[index] !== undefined ? String(row[index]).trim() : "";
+        });
+
+        const convertedRow = outputHeaders.map(header => {
+          if (alwaysBlankHeaders.includes(header)) return "";
+          if (header === "HRMOS勤怠メニュー") return "表示する";
+          if (header === "権限ID") return "5";
+          if (header === "権限") return "5. 一般利用者";
+          if (header === "ログインID") return getValue(obj, "社員番号");
+          if (header === "パスワード") return formatPasswordFromBirthdate(getValue(obj, "生年月日"));
+
+          if (header === "雇用形態ID") {
+            const employmentType = normalizeEmploymentType(getValue(obj, "雇用形態"));
+            const employmentTypeId = getValue(obj, "雇用形態ID");
+            if (employmentType === "正社員") return "1";
+            if (employmentType === "アルバイト") return "2";
+            return employmentTypeId;
+          }
+
+          if (header === "雇用形態") {
+            const employmentType = normalizeEmploymentType(getValue(obj, "雇用形態"));
+            const employmentTypeId = getValue(obj, "雇用形態ID");
+            if (employmentType === "正社員" || employmentType === "アルバイト") return employmentType;
+            if (employmentTypeId === "1") return "正社員";
+            if (employmentTypeId === "2") return "アルバイト";
+            return getValue(obj, "雇用形態");
+          }
+
+          if (header === "入社日" || header === "休職日_開始_" || header === "休職日_終了_" || header === "退職日") {
+            return formatDate(getValue(obj, header));
+          }
+
+          return getValue(obj, header);
+        });
+
+        convertedRows.push(convertedRow);
+      });
+
+      renderPreview(convertedRows);
+      document.getElementById("downloadBtn").disabled = false;
+      document.getElementById("previewCount").textContent = dataRows.length + "件 / " + outputHeaders.length + "列";
+
+      setStatus(
+        "整形が完了しました。\n" +
+        "整形パターン: " + tools[currentTool].name + "\n" +
+        "読み込み件数: " + dataRows.length + "件\n" +
+        "区切り文字: " + (delimiter === "\t" ? "タブ" : "カンマ") + "\n" +
+        "出力列数: " + outputHeaders.length + "列",
+        "success"
+      );
+    }
+
+    function detectDelimiter(text) {
+      const firstLine = String(text || "").split(/\r?\n/)[0] || "";
+      const tabCount = (firstLine.match(/\t/g) || []).length;
+      const commaCount = (firstLine.match(/,/g) || []).length;
+      return tabCount > commaCount ? "\t" : ",";
+    }
+
+    function getValue(obj, headerName) {
+      const normalized = normalizeHeader(headerName);
+      return obj[normalized] !== undefined ? obj[normalized] : "";
+    }
+
+    function normalizeHeader(value) {
+      return String(value || "").replace(/^\uFEFF/, "").replace(/\r?\n/g, "").trim();
+    }
+
+    function normalizeEmploymentType(value) {
+      const v = String(value || "").replace(/\s+/g, "").replace(/　+/g, "").trim();
+      if (v === "正社員" || v === "社員" || v === "1") return "正社員";
+      if (v === "アルバイト" || v === "バイト" || v === "パート" || v === "2") return "アルバイト";
+      return v;
+    }
+
+    function formatPasswordFromBirthdate(value) {
+      const v = String(value || "").trim();
+      if (!v) return "";
+
+      const digits = v.replace(/[年月日\/-]/g, "").replace(/\D/g, "");
+      if (digits.length === 8) return digits;
+
+      const formatted = formatDate(v);
+      return String(formatted || "").replace(/\D/g, "");
+    }
+
+    function formatDate(value) {
+      const v = String(value || "").trim();
+      if (!v) return "";
+      const normalized = v.replace(/[年月]/g, "/").replace(/日/g, "").replace(/-/g, "/").trim();
+      const parts = normalized.split("/");
+      if (parts.length !== 3) return v;
+      const year = parts[0].padStart(4, "0");
+      const month = parts[1].padStart(2, "0");
+      const day = parts[2].padStart(2, "0");
+      if (!/^\d{4}$/.test(year) || !/^\d{2}$/.test(month) || !/^\d{2}$/.test(day)) return v;
+      return year + "/" + month + "/" + day;
+    }
+
+    function parseDelimitedText(text, delimiter) {
+      const rows = [];
+      let row = [];
+      let cell = "";
+      let inQuotes = false;
+
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const nextChar = text[i + 1];
+
+        if (char === '"' && inQuotes && nextChar === '"') {
+          cell += '"';
+          i++;
+        } else if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === delimiter && !inQuotes) {
+          row.push(cell);
+          cell = "";
+        } else if ((char === "\n" || char === "\r") && !inQuotes) {
+          if (char === "\r" && nextChar === "\n") i++;
+          row.push(cell);
+          rows.push(row);
+          row = [];
+          cell = "";
+        } else {
+          cell += char;
+        }
+      }
+
+      if (cell !== "" || row.length > 0) {
+        row.push(cell);
+        rows.push(row);
+      }
+      return rows;
+    }
+
+    function escapeCsvCell(value) {
+      const v = String(value ?? "");
+      if (v.includes('"') || v.includes(",") || v.includes("\n") || v.includes("\r")) {
+        return '"' + v.replace(/"/g, '""') + '"';
+      }
+      return v;
+    }
+
+    function downloadCsv() {
+      if (!convertedRows || convertedRows.length === 0) {
+        setStatus("先にCSVを整形してください。", "error");
+        return;
+      }
+
+      const csvText = convertedRows.map(row => row.map(escapeCsvCell).join(",")).join("\r\n");
+      const bom = "\uFEFF";
+      const blob = new Blob([bom + csvText], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const dd = String(now.getDate()).padStart(2, "0");
+      const prefix = tools[currentTool]?.downloadPrefix || "converted";
+
+      a.href = url;
+      a.download = prefix + "_" + yyyy + mm + dd + ".csv";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function renderPreview(rows) {
+      const preview = document.getElementById("preview");
+      preview.innerHTML = "";
+
+      if (!rows || rows.length === 0) {
+        preview.innerHTML = '<div class="empty-preview">プレビューするデータがありません。</div>';
+        return;
+      }
+
+      const table = document.createElement("table");
+      const maxRows = Math.min(rows.length, 51);
+
+      for (let i = 0; i < maxRows; i++) {
+        const tr = document.createElement("tr");
+        rows[i].forEach(cell => {
+          const el = i === 0 ? document.createElement("th") : document.createElement("td");
+          el.textContent = cell;
+          tr.appendChild(el);
+        });
+        table.appendChild(tr);
+      }
+      preview.appendChild(table);
+    }
+
+    function resetTool(clearFile = true) {
+      if (clearFile) document.getElementById("csvFile").value = "";
+      document.getElementById("preview").innerHTML = '<div class="empty-preview">左側で整形パターンを選び、CSVを選択して「整形する」を押すと、<br>ここに変更後のファイル内容が表示されます。</div>';
+      document.getElementById("downloadBtn").disabled = true;
+      document.getElementById("previewCount").textContent = "未読み込み";
+      convertedRows = [];
+      setStatus("整形パターンを選び、CSVファイルを選択してください。", "");
+    }
+
+    function setStatus(message, type) {
+      const status = document.getElementById("status");
+      status.textContent = message;
+      status.className = "status";
+      if (type) status.classList.add(type);
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>'"]/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "'": "&#39;",
+        '"': "&quot;"
+      }[char]));
+    }
+  </script>
+</body>
+</html>
