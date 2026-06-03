@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CSV整形ツール</title>
+  <title>CSV整形ツール v20260603-required-blank</title>
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f3f5f8; color: #111827; }
@@ -46,6 +46,11 @@
     td[contenteditable="true"]:focus { box-shadow: inset 0 0 0 2px #2563eb; background: #eff6ff; }
     .empty-preview { padding: 80px 24px; text-align: center; color: #6b7280; line-height: 1.8; }
     .mini { font-size: 12px; color: #6b7280; line-height: 1.6; margin-top: 8px; }
+
+    .cell-summary { background: #e0f2fe !important; }
+    .cell-store-summary { background: #fce7f3 !important; }
+    .cell-detail-header { background: #e5e7eb !important; font-weight: 900; }
+    .cell-date-weekday { background: #f3f4f6 !important; }
     @media (max-width: 900px) { .app { grid-template-columns: 1fr; } .preview-card { height: 70vh; } }
   </style>
 </head>
@@ -118,7 +123,7 @@
     </main>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       let currentPattern = 'hrmos';
@@ -186,6 +191,8 @@
             '<li>打刻漏れは削除せず、出勤/退勤の片方だけを表示し、勤務時間は空欄</li>' +
             '<li>店舗別集計は、実データ内に出てきた店舗だけを自動表示</li>' +
             '<li>店舗別集計は、出勤打刻がある日の出勤店舗をカウント</li>' +
+            '<li>定時：平日 11:00〜22:00、土曜 10:00〜20:00、日曜 10:00〜18:00</li>' +
+            '<li>遅刻日数は、出勤時刻が定時開始を過ぎた日を自動カウント</li>' +
             '<li>Excelには打刻漏れ一覧シートも追加</li>' +
             '<li>日付は yyyy/mm/dd 形式で月初から翌月1日まで表示</li>' +
             '<li>プレビューに出ない場合は、文字コードを変更して再実行してください</li>' +
@@ -357,6 +364,8 @@
           if (isHoliday) holidayWorkMin = workMin;
           else normalOtMin = Math.max(0, workMin - 480);
         }
+        const scheduled = getScheduledTimes(dateObj);
+        const isLate = Boolean(start && scheduled && minutesFromDate(start) > scheduled.startMin);
         return {
           employeeId: g.employeeId,
           name: g.name,
@@ -367,6 +376,7 @@
           hasBothPunches: Boolean(start && end),
           missingType: start && !end ? '退勤漏れ' : (!start && end ? '出勤漏れ' : ''),
           isHoliday: Boolean(isHoliday),
+          isLate,
           start: start ? formatTime(start) : '',
           end: end ? formatTime(end) : '',
           breakMin,
@@ -385,10 +395,9 @@
         const month = Number(monthText);
         const days = daysInMonthPlusNextFirst(year, month);
         const byDate = new Map(items.map(item => [item.date, item]));
-        const requiredDays = days.filter(d => d.getMonth() === month - 1 && !isWeekend(d)).length;
         const attendanceDays = items.filter(i => i.start && !i.isHoliday).length;
         const holidayDays = items.filter(i => i.start && i.isHoliday).length;
-        const absenceDays = Math.max(0, requiredDays - attendanceDays);
+        const lateDays = items.filter(i => i.isLate).length;
         const storeCounts = countStores(items);
         const totalWorkMin = sum(items, 'workMin');
         const totalNormalOtMin = sum(items, 'normalOtMin');
@@ -402,7 +411,7 @@
         const storeHeaderBottom = storeNames.slice(Math.ceil(storeNames.length / 2));
 
         rows.push(['', '', '要出勤日数','出勤日数','欠勤日数','遅刻日数','早退日数','休日出勤','有給休暇', ...storeHeaderTop]);
-        rows.push(['', '', requiredDays, attendanceDays, absenceDays, 0, 0, holidayDays, 0, ...storeHeaderTop.map(s => storeCounts[s] || 0)]);
+        rows.push(['', '', null, attendanceDays, null, lateDays, 0, holidayDays, 0, ...storeHeaderTop.map(s => storeCounts[s] || 0)]); // 要出勤日数・欠勤日数は人/月ごとに異なるため必ず空欄
         rows.push(['氏名', '', '勤務時間','普通残業時間','深夜残業時間','休日労働時間','休日深夜残業時間', '', '', ...storeHeaderBottom]);
         rows.push([first.name || first.employeeId, '', minutesToTime(totalWorkMin), minutesToTime(totalNormalOtMin), minutesToTime(totalDeepOtMin), minutesToTime(totalHolidayWorkMin), minutesToTime(totalHolidayDeepMin), '', '', ...storeHeaderBottom.map(s => storeCounts[s] || 0)]);
         rows.push(detailHeaders);
@@ -506,6 +515,15 @@
       function minutesToTime(minutes) { const total = Math.max(0, Number(minutes || 0)); return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0'); }
       function getJapaneseDay(date) { return ['日','月','火','水','木','金','土'][date.getDay()]; }
       function isWeekend(date) { return date.getDay() === 0 || date.getDay() === 6; }
+
+      function getScheduledTimes(date) {
+        if (!date) return null;
+        const day = date.getDay();
+        if (day === 0) return { startMin: 10 * 60, endMin: 18 * 60 };
+        if (day === 6) return { startMin: 10 * 60, endMin: 20 * 60 };
+        return { startMin: 11 * 60, endMin: 22 * 60 };
+      }
+      function minutesFromDate(date) { return date.getHours() * 60 + date.getMinutes(); }
       function sum(items, key) { return items.reduce((total, item) => total + Number(item[key] || 0), 0); }
       function daysInMonthPlusNextFirst(year, month) {
         const arr = [];
@@ -534,6 +552,8 @@
           for (let colIndex = 0; colIndex < maxCols; colIndex++) {
             const isHeaderRow = currentPattern === 'hrmos' ? i === 0 : i === 4;
             const cellElement = isHeaderRow ? document.createElement('th') : document.createElement('td');
+            const className = getPreviewCellClass(i, colIndex);
+            if (className) cellElement.classList.add(className);
             cellElement.textContent = rows[i] ? (rows[i][colIndex] ?? '') : '';
             if (!isHeaderRow) {
               cellElement.contentEditable = 'true';
@@ -548,6 +568,17 @@
           table.appendChild(tr);
         }
         preview.appendChild(table);
+      }
+
+
+      function getPreviewCellClass(rowIndex, colIndex) {
+        if (currentPattern !== 'attendance') return '';
+        if (rowIndex >= 0 && rowIndex <= 3) {
+          return colIndex >= 9 ? 'cell-store-summary' : 'cell-summary';
+        }
+        if (rowIndex === 4) return 'cell-detail-header';
+        if (rowIndex >= 5 && (colIndex === 0 || colIndex === 1)) return 'cell-date-weekday';
+        return '';
       }
 
       function renderEmptyPreview() {
@@ -573,10 +604,51 @@
         excelSheets.forEach(sheet => {
           const ws = XLSX.utils.aoa_to_sheet(sheet.rows);
           ws['!cols'] = makeColumnWidths(sheet.rows);
+          applyExcelStyles(ws, sheet.rows, sheet.name);
           XLSX.utils.book_append_sheet(wb, ws, safeSheetName(sheet.name));
         });
         XLSX.writeFile(wb, (currentPattern === 'hrmos' ? 'hrmos_import_' : 'attendance_summary_') + todayYmd() + '.xlsx');
       }
+
+      function applyExcelStyles(ws, rows, sheetName) {
+        if (!ws || !rows || !rows.length) return;
+        const range = XLSX.utils.decode_range(ws['!ref']);
+        const thinBorder = {
+          top: { style: 'thin', color: { rgb: 'D9E2EC' } },
+          bottom: { style: 'thin', color: { rgb: 'D9E2EC' } },
+          left: { style: 'thin', color: { rgb: 'D9E2EC' } },
+          right: { style: 'thin', color: { rgb: 'D9E2EC' } }
+        };
+        for (let R = range.s.r; R <= range.e.r; ++R) {
+          for (let C = range.s.c; C <= range.e.c; ++C) {
+            const addr = XLSX.utils.encode_cell({ r: R, c: C });
+            if (!ws[addr]) ws[addr] = { t: 's', v: '' };
+            const style = {
+              border: thinBorder,
+              alignment: { vertical: 'center', horizontal: 'center' },
+              font: { name: 'Arial', sz: 10 }
+            };
+            if (currentPattern === 'attendance' && sheetName !== '打刻漏れ一覧') {
+              if (R >= 0 && R <= 3) {
+                style.fill = { patternType: 'solid', fgColor: { rgb: C >= 9 ? 'FCE7F3' : 'E0F2FE' } };
+                if (R === 0 || R === 2) style.font = { name: 'Arial', sz: 10, bold: true };
+              }
+              if (R === 4) {
+                style.fill = { patternType: 'solid', fgColor: { rgb: 'E5E7EB' } };
+                style.font = { name: 'Arial', sz: 10, bold: true };
+              }
+              if (R >= 5 && (C === 0 || C === 1)) {
+                style.fill = { patternType: 'solid', fgColor: { rgb: 'F3F4F6' } };
+              }
+            } else if (R === 0) {
+              style.fill = { patternType: 'solid', fgColor: { rgb: 'E5E7EB' } };
+              style.font = { name: 'Arial', sz: 10, bold: true };
+            }
+            ws[addr].s = style;
+          }
+        }
+      }
+
       function makeColumnWidths(rows) {
         const maxCols = maxColumnCount(rows);
         const widths = [];
