@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -311,6 +310,25 @@
       vertical-align: top;
     }
 
+    td[contenteditable="true"] {
+      cursor: text;
+      background: #ffffff;
+    }
+
+    td[contenteditable="true"]:hover {
+      background: #f8fafc;
+    }
+
+    td[contenteditable="true"]:focus {
+      outline: 2px solid #111827;
+      outline-offset: -2px;
+      background: #ffffff;
+    }
+
+    .edited-cell {
+      background: #fff7ed !important;
+    }
+
     th {
       position: sticky;
       top: 0;
@@ -356,7 +374,7 @@
     <aside class="sidebar">
       <h1>CSV整形ツール</h1>
       <div class="lead">
-        左側で整形パターンを選択してCSVを読み込みます。右側に変更後のファイル内容をプレビューします。
+        左側で整形パターンを選択してCSVを読み込みます。右側に変更後のファイル内容をプレビューします。プレビュー上でセルの編集もできます。
       </div>
 
       <section class="panel">
@@ -408,7 +426,7 @@
       <div class="main-header">
         <div>
           <h2 class="main-title" id="mainTitle">整形後ファイルのプレビュー</h2>
-          <div class="lead" id="mainLead" style="margin:6px 0 0;">右側に出力CSVの内容を表示します。先頭50行までプレビューされます。</div>
+          <div class="lead" id="mainLead" style="margin:6px 0 0;">右側に出力CSVの内容を表示します。先頭50行までプレビューされ、セルを直接編集できます。</div>
         </div>
       </div>
 
@@ -416,14 +434,14 @@
         <div class="preview-toolbar">
           <div>
             <div class="preview-title" id="previewTitle">HRMOS取り込み用CSV</div>
-            <div class="preview-note" id="previewNote">列順・固定値・空欄項目を反映済み</div>
+            <div class="preview-note" id="previewNote">列順・固定値・空欄項目を反映済み。セルをクリックして編集できます。</div>
           </div>
           <div class="preview-count" id="previewCount">未読み込み</div>
         </div>
         <div class="table-wrap" id="preview">
           <div class="empty-preview">
             左側で整形パターンを選び、CSVを選択して「整形する」を押すと、<br>
-            ここに変更後のファイル内容が表示されます。
+            ここに変更後のファイル内容が表示されます。セルをクリックすると編集できます。
           </div>
         </div>
       </section>
@@ -435,7 +453,7 @@
       hrmos: {
         name: "HRMOS勤怠CSV整形",
         previewTitle: "HRMOS取り込み用CSV",
-        previewNote: "列順・固定値・空欄項目を反映済み",
+        previewNote: "列順・固定値・空欄項目を反映済み。セルをクリックして編集できます。",
         downloadPrefix: "hrmos_import",
         details: [
           "元CSVの想定項目：社員番号、姓、名、セイ、メイ、メールアドレス、雇用形態、生年月日",
@@ -722,9 +740,34 @@
 
       for (let i = 0; i < maxRows; i++) {
         const tr = document.createElement("tr");
-        rows[i].forEach(cell => {
+        rows[i].forEach((cell, columnIndex) => {
           const el = i === 0 ? document.createElement("th") : document.createElement("td");
           el.textContent = cell;
+
+          if (i !== 0) {
+            el.contentEditable = "true";
+            el.dataset.rowIndex = String(i);
+            el.dataset.columnIndex = String(columnIndex);
+            el.title = "クリックして編集できます";
+
+            el.addEventListener("input", function() {
+              const rowIndex = Number(this.dataset.rowIndex);
+              const colIndex = Number(this.dataset.columnIndex);
+              if (convertedRows[rowIndex]) {
+                convertedRows[rowIndex][colIndex] = this.textContent;
+                this.classList.add("edited-cell");
+                setStatus("プレビュー上の編集を反映しました。ダウンロードすると編集後の内容で出力されます。", "success");
+              }
+            });
+
+            el.addEventListener("keydown", function(event) {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                this.blur();
+              }
+            });
+          }
+
           tr.appendChild(el);
         });
         table.appendChild(tr);
@@ -734,7 +777,7 @@
 
     function resetTool(clearFile = true) {
       if (clearFile) document.getElementById("csvFile").value = "";
-      document.getElementById("preview").innerHTML = '<div class="empty-preview">左側で整形パターンを選び、CSVを選択して「整形する」を押すと、<br>ここに変更後のファイル内容が表示されます。</div>';
+      document.getElementById("preview").innerHTML = '<div class="empty-preview">左側で整形パターンを選び、CSVを選択して「整形する」を押すと、<br>ここに変更後のファイル内容が表示されます。セルをクリックすると編集できます。</div>';
       document.getElementById("downloadBtn").disabled = true;
       document.getElementById("previewCount").textContent = "未読み込み";
       convertedRows = [];
