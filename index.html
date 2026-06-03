@@ -133,8 +133,6 @@
         '社員ID','入社日','休職日_開始_','休職日_終了_','退職日','備考','部門ID','部門','拠点ID','拠点','第一承認者ID','第一承認者','第二承認者ID','第二承認者','第三承認者ID','第三承認者','第四承認者ID','第四承認者'
       ];
       const detailHeaders = ['月','曜日','店舗','勤怠','','始業時刻','終業時刻','休憩','勤務時間','普通残業時間','深夜残業時間','休日労働時間','休日深夜残業時間'];
-      const storeHeaderTop = ['大阪梅田','高槻','心斎橋','河原町'];
-      const storeHeaderBottom = ['阪急梅田','なんば本店','烏丸','神戸三宮'];
 
       const el = id => document.getElementById(id);
       const setText = (id, text) => { const node = el(id); if (node) node.textContent = text; };
@@ -186,6 +184,8 @@
             '<li>店舗は出勤打刻の拠点名を使用</li>' +
             '<li>勤怠列は一旦、空欄</li>' +
             '<li>打刻漏れは削除せず、出勤/退勤の片方だけを表示し、勤務時間は空欄</li>' +
+            '<li>店舗別集計は、実データ内に出てきた店舗だけを自動表示</li>' +
+            '<li>店舗別集計は、出勤打刻がある日の出勤店舗をカウント</li>' +
             '<li>Excelには打刻漏れ一覧シートも追加</li>' +
             '<li>日付は yyyy/mm/dd 形式で月初から翌月1日まで表示</li>' +
             '<li>プレビューに出ない場合は、文字コードを変更して再実行してください</li>' +
@@ -386,8 +386,8 @@
         const days = daysInMonthPlusNextFirst(year, month);
         const byDate = new Map(items.map(item => [item.date, item]));
         const requiredDays = days.filter(d => d.getMonth() === month - 1 && !isWeekend(d)).length;
-        const attendanceDays = items.filter(i => i.hasBothPunches && !i.isHoliday).length;
-        const holidayDays = items.filter(i => i.hasBothPunches && i.isHoliday).length;
+        const attendanceDays = items.filter(i => i.start && !i.isHoliday).length;
+        const holidayDays = items.filter(i => i.start && i.isHoliday).length;
         const absenceDays = Math.max(0, requiredDays - attendanceDays);
         const storeCounts = countStores(items);
         const totalWorkMin = sum(items, 'workMin');
@@ -397,6 +397,10 @@
         const totalHolidayDeepMin = sum(items, 'holidayDeepMin');
 
         const rows = [];
+        const storeNames = Object.keys(storeCounts);
+        const storeHeaderTop = storeNames.slice(0, Math.ceil(storeNames.length / 2));
+        const storeHeaderBottom = storeNames.slice(Math.ceil(storeNames.length / 2));
+
         rows.push(['', '', '要出勤日数','出勤日数','欠勤日数','遅刻日数','早退日数','休日出勤','有給休暇', ...storeHeaderTop]);
         rows.push(['', '', requiredDays, attendanceDays, absenceDays, 0, 0, holidayDays, 0, ...storeHeaderTop.map(s => storeCounts[s] || 0)]);
         rows.push(['氏名', '', '勤務時間','普通残業時間','深夜残業時間','休日労働時間','休日深夜残業時間', '', '', ...storeHeaderBottom]);
@@ -512,7 +516,7 @@
       }
       function countStores(items) {
         const obj = {};
-        items.forEach(i => { if (i.store && i.hasBothPunches) obj[i.store] = (obj[i.store] || 0) + 1; });
+        items.forEach(i => { if (i.store && i.start) obj[i.store] = (obj[i.store] || 0) + 1; });
         return obj;
       }
       function safeSheetName(name) { return String(name || 'sheet').replace(/[\\/:?*\[\]]/g, '').slice(0, 31) || 'sheet'; }
