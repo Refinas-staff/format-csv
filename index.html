@@ -1,686 +1,76 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CSV整形ツール v20260603-required-blank</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f3f5f8; color: #111827; }
-    .app { min-height: 100vh; display: grid; grid-template-columns: 390px minmax(0, 1fr); }
-    .sidebar { background: #fff; border-right: 1px solid #e5e7eb; padding: 24px; overflow-y: auto; }
-    .main { padding: 24px; overflow: hidden; }
-    h1 { margin: 0 0 8px; font-size: 24px; }
-    .lead { margin: 0 0 20px; color: #6b7280; line-height: 1.7; font-size: 14px; }
-    .panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 16px; padding: 18px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.03); }
-    .panel-title { font-weight: 800; margin-bottom: 12px; font-size: 15px; }
-    .pattern-list { display: grid; gap: 10px; }
-    .pattern-card { width: 100%; border: 1px solid #e5e7eb; background: #f9fafb; border-radius: 12px; padding: 12px; text-align: left; cursor: pointer; }
-    .pattern-card.active { background: #111827; color: #fff; border-color: #111827; }
-    .pattern-card.disabled { opacity: .45; cursor: not-allowed; }
-    .pattern-title { font-weight: 800; margin-bottom: 4px; }
-    .pattern-desc { font-size: 12px; line-height: 1.5; color: inherit; opacity: .8; }
-    label { display: block; font-weight: 700; margin-bottom: 8px; }
-    input[type="file"], select { width: 100%; border: 1px solid #d1d5db; background: #fff; border-radius: 10px; padding: 10px; margin-bottom: 12px; }
-    .buttons { display: grid; gap: 8px; }
-    button.action { border: 0; border-radius: 10px; padding: 12px 14px; font-weight: 800; cursor: pointer; }
-    .primary { background: #111827; color: #fff; }
-    .secondary { background: #e8eef7; color: #111827; }
-    .excel { background: #e9f8ef; color: #166534; }
-    .danger { background: #fff1f2; color: #be123c; }
-    button:disabled { opacity: .45; cursor: not-allowed; }
-    .status { margin-top: 12px; padding: 12px; border-radius: 10px; background: #f9fafb; border: 1px solid #e5e7eb; color: #374151; font-size: 13px; line-height: 1.6; white-space: pre-line; }
-    .status.success { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
-    .status.error { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
-    .rule-list { margin: 0; padding-left: 18px; color: #4b5563; line-height: 1.8; font-size: 13px; }
-    .preview-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 18px; height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; }
-    .preview-toolbar { padding: 18px 20px; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between; gap: 16px; background: #fff; }
-    .preview-title { font-size: 18px; font-weight: 900; }
-    .preview-note { color: #6b7280; font-size: 13px; margin-top: 4px; }
-    .preview-count { background: #f3f4f6; padding: 8px 12px; border-radius: 999px; font-weight: 800; font-size: 13px; white-space: nowrap; }
-    .table-wrap { overflow: auto; flex: 1; background: #fff; }
-    table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 13px; }
-    th, td { border-right: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; padding: 8px 10px; white-space: nowrap; min-width: 96px; height: 34px; }
-    th { position: sticky; top: 0; z-index: 2; background: #f8fafc; font-weight: 900; }
-    td[contenteditable="true"] { background: #fffef2; outline: none; }
-    td[contenteditable="true"]:focus { box-shadow: inset 0 0 0 2px #2563eb; background: #eff6ff; }
-    .empty-preview { padding: 80px 24px; text-align: center; color: #6b7280; line-height: 1.8; }
-    .mini { font-size: 12px; color: #6b7280; line-height: 1.6; margin-top: 8px; }
-
-    .cell-summary { background: #e0f2fe !important; }
-    .cell-store-summary { background: #fce7f3 !important; }
-    .cell-detail-header { background: #e5e7eb !important; font-weight: 900; }
-    .cell-date-weekday { background: #f3f4f6 !important; }
-    @media (max-width: 900px) { .app { grid-template-columns: 1fr; } .preview-card { height: 70vh; } }
-  </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CSV整形ツール</title>
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <div class="app">
+  <div class="app-shell">
     <aside class="sidebar">
-      <h1>CSV整形ツール</h1>
-      <p class="lead">整形パターンを選んでCSVを読み込みます。処理はブラウザ内だけで完結します。</p>
-
-      <div class="panel">
-        <div class="panel-title">1. 整形パターンを選択</div>
-        <div class="pattern-list">
-          <button type="button" class="pattern-card active" data-pattern="hrmos">
-            <div class="pattern-title">HRMOS勤怠CSV整形</div>
-            <div class="pattern-desc">社員登録用CSVに変換します。</div>
-          </button>
-          <button type="button" class="pattern-card" data-pattern="attendance">
-            <div class="pattern-title">勤怠CSV整形</div>
-            <div class="pattern-desc">打刻データから月別・社員別勤務表を作ります。</div>
-          </button>
-          <button type="button" class="pattern-card disabled" disabled>
-            <div class="pattern-title">応募者CSV整形</div>
-            <div class="pattern-desc">追加予定</div>
-          </button>
-          <button type="button" class="pattern-card disabled" disabled>
-            <div class="pattern-title">広告レポートCSV整形</div>
-            <div class="pattern-desc">追加予定</div>
-          </button>
+      <header class="brand">
+        <div class="brand-mark">CSV</div>
+        <div>
+          <h1>CSV整形ツール</h1>
+          <p>整形パターンを選んで、CSVを変換します。</p>
         </div>
-      </div>
+      </header>
 
-      <div class="panel">
-        <div class="panel-title">2. ファイルインポート</div>
-        <label for="encoding">文字コード</label>
-        <select id="encoding">
-          <option value="auto" selected>自動判定</option>
+      <section class="panel">
+        <h2>1. 整形パターン</h2>
+        <div id="patternList" class="pattern-list"></div>
+      </section>
+
+      <section class="panel">
+        <h2>2. ファイル</h2>
+        <label class="field-label" for="encodingSelect">文字コード</label>
+        <select id="encodingSelect">
+          <option value="auto">自動判定</option>
           <option value="utf-8">UTF-8</option>
           <option value="shift_jis">Shift_JIS</option>
         </select>
-        <label for="csvFile">CSVファイル</label>
-        <input type="file" id="csvFile" accept=".csv,.txt,text/csv,text/plain">
-        <div class="buttons">
-          <button class="action primary" type="button" id="convertBtn">CSVを整形する</button>
-          <button class="action secondary" type="button" id="downloadCsvBtn" disabled>CSVをダウンロード</button>
-          <button class="action excel" type="button" id="downloadExcelBtn" disabled>Excelをダウンロード</button>
-          <button class="action danger" type="button" id="resetBtn">リセット</button>
-        </div>
-        <div class="status" id="status">CSVファイルを選択してください。</div>
-      </div>
 
-      <div class="panel">
-        <div class="panel-title">3. 選択中の整形内容</div>
-        <div id="patternInfo"></div>
-      </div>
+        <label class="file-drop" for="fileInput">
+          <span class="file-drop-title">CSV / TSVを選択</span>
+          <span id="fileName" class="file-drop-sub">まだ選択されていません</span>
+          <input id="fileInput" type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values" />
+        </label>
+
+        <div class="button-grid">
+          <button id="convertButton" class="button primary">整形する</button>
+          <button id="downloadCsvButton" class="button secondary" disabled>CSVをダウンロード</button>
+          <button id="downloadExcelButton" class="button excel" disabled>Excelをダウンロード</button>
+          <button id="resetButton" class="button ghost">リセット</button>
+        </div>
+        <div id="status" class="status">整形パターンとファイルを選択してください。</div>
+      </section>
+
+      <section class="panel">
+        <h2>3. 選択中の条件</h2>
+        <div id="patternInfo" class="pattern-info"></div>
+      </section>
     </aside>
 
     <main class="main">
       <section class="preview-card">
-        <div class="preview-toolbar">
+        <div class="preview-header">
           <div>
-            <div class="preview-title" id="previewTitle">HRMOS取り込み用CSV</div>
-            <div class="preview-note" id="previewNote">セルをクリックすると直接編集できます。編集内容はCSV/Excel出力に反映されます。</div>
+            <h2 id="previewTitle">プレビュー</h2>
+            <p id="previewNote">整形後のデータがここに表示されます。セルは直接編集できます。</p>
           </div>
-          <div class="preview-count" id="previewCount">未読み込み</div>
+          <div id="previewBadge" class="preview-badge">0行</div>
         </div>
-        <div class="table-wrap" id="preview">
-          <div class="empty-preview">左側からCSVを選択して「CSVを整形する」を押すと、<br>ここに変更後のファイル内容が表示されます。</div>
+        <div id="sheetTabs" class="sheet-tabs"></div>
+        <div id="previewArea" class="preview-area empty">
+          CSVを整形すると、ここにプレビューが表示されます。
         </div>
       </section>
     </main>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script>
-    document.addEventListener('DOMContentLoaded', function () {
-      let currentPattern = 'hrmos';
-      let convertedRows = [];
-      let excelSheets = [];
-      let attendanceIssueCount = 0;
-
-      const hrmosHeaders = [
-        '社員ID','ログインID','パスワード','社員番号','姓','名','セイ','メイ','メールアドレス','入社日','休職日_開始_','休職日_終了_','退職日','備考','部門ID','部門','拠点ID','拠点','雇用形態ID','雇用形態','第一承認者ID','第一承認者','第二承認者ID','第二承認者','第三承認者ID','第三承認者','第四承認者ID','第四承認者','HRMOS勤怠メニュー','権限ID','権限'
-      ];
-      const alwaysBlankHeaders = [
-        '社員ID','入社日','休職日_開始_','休職日_終了_','退職日','備考','部門ID','部門','拠点ID','拠点','第一承認者ID','第一承認者','第二承認者ID','第二承認者','第三承認者ID','第三承認者','第四承認者ID','第四承認者'
-      ];
-      const detailHeaders = ['月','曜日','店舗','勤怠','','始業時刻','終業時刻','休憩','勤務時間','普通残業時間','深夜残業時間','休日労働時間','休日深夜残業時間'];
-
-      const el = id => document.getElementById(id);
-      const setText = (id, text) => { const node = el(id); if (node) node.textContent = text; };
-      const setHtml = (id, html) => { const node = el(id); if (node) node.innerHTML = html; };
-      const setDisabled = (id, flag) => { const node = el(id); if (node) node.disabled = flag; };
-
-      function init() {
-        document.querySelectorAll('.pattern-card[data-pattern]').forEach(button => {
-          button.addEventListener('click', () => selectPattern(button.dataset.pattern));
-        });
-        el('convertBtn').addEventListener('click', convertCsv);
-        el('downloadCsvBtn').addEventListener('click', downloadCsv);
-        el('downloadExcelBtn').addEventListener('click', downloadExcel);
-        el('resetBtn').addEventListener('click', resetTool);
-        updatePatternInfo();
-        renderEmptyPreview();
-      }
-
-      function selectPattern(pattern) {
-        currentPattern = pattern;
-        document.querySelectorAll('.pattern-card[data-pattern]').forEach(button => button.classList.toggle('active', button.dataset.pattern === pattern));
-        convertedRows = [];
-        excelSheets = [];
-        attendanceIssueCount = 0;
-        setDisabled('downloadCsvBtn', true);
-        setDisabled('downloadExcelBtn', true);
-        renderEmptyPreview();
-        updatePatternInfo();
-        setStatus('CSVファイルを選択してください。', '');
-      }
-
-      function updatePatternInfo() {
-        if (currentPattern === 'hrmos') {
-          setText('previewTitle', 'HRMOS取り込み用CSV');
-          setText('previewNote', 'セルをクリックすると直接編集できます。編集内容はCSV/Excel出力に反映されます。');
-          setHtml('patternInfo', '<ul class="rule-list">' +
-            '<li>元CSV項目：社員番号、姓、名、セイ、メイ、生年月日、メールアドレス、雇用形態</li>' +
-            '<li>ログインIDは社員番号と同じ</li>' +
-            '<li>パスワードは生年月日から「/」「-」などを除外</li>' +
-            '<li>正社員 → 雇用形態ID 1、アルバイト → 2</li>' +
-            '<li>HRMOS勤怠メニュー、権限ID、権限は固定</li>' +
-            '</ul>');
-        } else {
-          setText('previewTitle', '勤怠集計Excelプレビュー');
-          setText('previewNote', '右側は1人目・1か月分のプレビューです。Excel出力時は社員・月ごとにシートを分けます。');
-          setHtml('patternInfo', '<ul class="rule-list">' +
-            '<li>元CSV項目：打刻日時、社員ID、氏名、種別、拠点名</li>' +
-            '<li>種別は「出勤」「退勤」に対応</li>' +
-            '<li>店舗は出勤打刻の拠点名を使用</li>' +
-            '<li>勤怠列は一旦、空欄</li>' +
-            '<li>打刻漏れは削除せず、出勤/退勤の片方だけを表示し、勤務時間は空欄</li>' +
-            '<li>店舗別集計は、実データ内に出てきた店舗だけを自動表示</li>' +
-            '<li>店舗別集計は、出勤打刻がある日の出勤店舗をカウント</li>' +
-            '<li>定時：平日 11:00〜22:00、土曜 10:00〜20:00、日曜 10:00〜18:00</li>' +
-            '<li>遅刻日数は、出勤時刻が定時開始を過ぎた日を自動カウント</li>' +
-            '<li>Excelには打刻漏れ一覧シートも追加</li>' +
-            '<li>日付は yyyy/mm/dd 形式で月初から翌月1日まで表示</li>' +
-            '<li>プレビューに出ない場合は、文字コードを変更して再実行してください</li>' +
-            '</ul>');
-        }
-      }
-
-      function convertCsv() {
-        const fileInput = el('csvFile');
-        if (!fileInput.files || fileInput.files.length === 0) {
-          setStatus('CSVファイルを選択してください。', 'error');
-          return;
-        }
-        const file = fileInput.files[0];
-        const reader = new FileReader();
-        reader.onload = function (event) {
-          try {
-            const decoded = readRowsWithBestEncoding(event.target.result);
-            if (!decoded.rows.length || !decoded.rows[0].length) throw new Error('CSVの中身が空です。');
-            if (currentPattern === 'hrmos') {
-              convertedRows = convertHrmos(decoded.rows);
-              excelSheets = [{ name: 'HRMOS', rows: convertedRows }];
-            } else {
-              const result = convertAttendance(decoded.rows);
-              convertedRows = result.previewRows;
-              excelSheets = result.sheets;
-            }
-            renderPreview(convertedRows);
-            setDisabled('downloadCsvBtn', convertedRows.length === 0);
-            setDisabled('downloadExcelBtn', excelSheets.length === 0);
-            setText('previewCount', convertedRows.length + '行 / ' + maxColumnCount(convertedRows) + '列');
-            let message = '整形が完了しました。\n文字コード: ' + decoded.encodingLabel + '\nExcelシート数: ' + excelSheets.length + '\nプレビュー行数: ' + convertedRows.length;
-            if (currentPattern === 'attendance') message += '\n打刻漏れ: ' + attendanceIssueCount + '件';
-            setStatus(message, 'success');
-          } catch (error) {
-            console.error(error);
-            renderEmptyPreview();
-            setStatus('CSVの整形中にエラーが発生しました。\n' + error.message, 'error');
-          }
-        };
-        reader.onerror = function () { setStatus('ファイルの読み込みに失敗しました。', 'error'); };
-        reader.readAsArrayBuffer(file);
-      }
-
-      function readRowsWithBestEncoding(buffer) {
-        const selected = el('encoding').value;
-        const candidates = selected === 'auto' ? ['utf-8', 'shift_jis'] : [selected];
-        let best = null;
-        candidates.forEach(enc => {
-          try {
-            const text = new TextDecoder(enc).decode(buffer);
-            const rows = parseDelimitedText(text);
-            const headers = (rows[0] || []).map(normalizeHeader);
-            const score = headerScore(headers, currentPattern);
-            const garbled = (text.match(/�/g) || []).length;
-            const item = { rows, score, garbled, encodingLabel: enc === 'shift_jis' ? 'Shift_JIS' : 'UTF-8', headers };
-            if (!best || item.score > best.score || (item.score === best.score && item.garbled < best.garbled)) best = item;
-          } catch (_) {}
-        });
-        if (!best) throw new Error('文字コードの読み込みに失敗しました。');
-        const required = currentPattern === 'attendance'
-          ? ['打刻日時','社員ID','氏名','種別','拠点名']
-          : ['社員番号','姓','名','セイ','メイ','生年月日','メールアドレス','雇用形態'];
-        const missing = required.filter(h => !best.headers.includes(h));
-        if (missing.length) {
-          throw new Error('必要な列が見つかりません。\n不足: ' + missing.join('、') + '\n読み取れた列: ' + best.headers.join('、'));
-        }
-        return best;
-      }
-
-      function headerScore(headers, pattern) {
-        const required = pattern === 'attendance'
-          ? ['打刻日時','社員ID','氏名','種別','拠点名']
-          : ['社員番号','姓','名','セイ','メイ','生年月日','メールアドレス','雇用形態'];
-        return required.filter(h => headers.includes(h)).length;
-      }
-
-      function convertHrmos(rows) {
-        const inputHeaders = rows[0].map(normalizeHeader);
-        const dataRows = rows.slice(1).filter(row => row.some(cell => String(cell).trim() !== ''));
-        const output = [hrmosHeaders];
-        dataRows.forEach(row => {
-          const obj = rowToObject(inputHeaders, row);
-          const employeeNo = getValue(obj, '社員番号');
-          const birthdate = getValue(obj, '生年月日');
-          const employment = getValue(obj, '雇用形態');
-          output.push(hrmosHeaders.map(header => {
-            if (alwaysBlankHeaders.includes(header)) return '';
-            if (header === 'ログインID') return employeeNo;
-            if (header === 'パスワード') return normalizeBirthdate(birthdate);
-            if (header === '雇用形態ID') return employmentToId(employment);
-            if (header === 'HRMOS勤怠メニュー') return '表示する';
-            if (header === '権限ID') return '5';
-            if (header === '権限') return '5. 一般利用者';
-            return getValue(obj, header);
-          }));
-        });
-        return output;
-      }
-
-      function convertAttendance(rows) {
-        const inputHeaders = rows[0].map(normalizeHeader);
-        const dataRows = rows.slice(1).filter(row => row.some(cell => String(cell).trim() !== ''));
-        const groups = new Map();
-
-        dataRows.forEach(row => {
-          const obj = rowToObject(inputHeaders, row);
-          const employeeId = getValue(obj, '社員ID');
-          const name = getValue(obj, '氏名');
-          const type = getValue(obj, '種別');
-          const store = getValue(obj, '拠点名');
-          const dt = parseDateTime(getValue(obj, '打刻日時'));
-          if (!dt || !employeeId) return;
-          const ym = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
-          const dateKey = formatDateKey(dt);
-          const key = employeeId + '||' + ym + '||' + dateKey;
-          if (!groups.has(key)) groups.set(key, { employeeId, name, ym, date: dateKey, store: '', fallbackStore: '', ins: [], outs: [] });
-          const group = groups.get(key);
-          if (name) group.name = name;
-          if (store && !group.fallbackStore) group.fallbackStore = store;
-          if (type === '出勤') {
-            group.ins.push(dt);
-            if (store && !group.store) group.store = store;
-          }
-          if (type === '退勤') group.outs.push(dt);
-        });
-
-        if (groups.size === 0) {
-          throw new Error('有効な打刻データが見つかりません。打刻日時・社員ID・種別の値を確認してください。');
-        }
-
-        const dailyRows = Array.from(groups.values()).map(makeDailyAttendanceRow).sort((a, b) => (a.employeeId + a.ym + a.date).localeCompare(b.employeeId + b.ym + b.date));
-        const issueRows = dailyRows.filter(row => row.hasAnyPunch && !row.hasBothPunches);
-        attendanceIssueCount = issueRows.length;
-
-        const byEmployeeMonth = new Map();
-        dailyRows.forEach(row => {
-          const key = row.employeeId + '||' + row.ym;
-          if (!byEmployeeMonth.has(key)) byEmployeeMonth.set(key, []);
-          byEmployeeMonth.get(key).push(row);
-        });
-
-        const sheets = [];
-        byEmployeeMonth.forEach(items => {
-          const sheetRows = buildAttendanceSheet(items);
-          const first = items[0];
-          sheets.push({ name: safeSheetName((first.name || first.employeeId) + '_' + first.ym.replace('-', '')), rows: sheetRows });
-        });
-
-        if (issueRows.length) {
-          sheets.push({ name: '打刻漏れ一覧', rows: buildAttendanceIssueSheet(issueRows) });
-        }
-
-        return { previewRows: sheets[0].rows, sheets };
-      }
-
-      function makeDailyAttendanceRow(g) {
-        g.ins.sort((a, b) => a - b);
-        g.outs.sort((a, b) => a - b);
-        const start = g.ins[0] || null;
-        const end = g.outs[g.outs.length - 1] || null;
-        let breakMin = null, workMin = null, normalOtMin = null, holidayWorkMin = null;
-        const dateObj = parseDateTime(g.date);
-        const isHoliday = dateObj && (dateObj.getDay() === 0 || dateObj.getDay() === 6);
-        if (start && end) {
-          const grossMin = Math.max(0, Math.round((end - start) / 60000));
-          breakMin = grossMin > 360 ? 60 : 0;
-          workMin = Math.max(0, grossMin - breakMin);
-          if (isHoliday) holidayWorkMin = workMin;
-          else normalOtMin = Math.max(0, workMin - 480);
-        }
-        const scheduled = getScheduledTimes(dateObj);
-        const isLate = Boolean(start && scheduled && minutesFromDate(start) > scheduled.startMin);
-        return {
-          employeeId: g.employeeId,
-          name: g.name,
-          ym: g.ym,
-          date: g.date,
-          store: g.store || g.fallbackStore || '',
-          hasAnyPunch: Boolean(start || end),
-          hasBothPunches: Boolean(start && end),
-          missingType: start && !end ? '退勤漏れ' : (!start && end ? '出勤漏れ' : ''),
-          isHoliday: Boolean(isHoliday),
-          isLate,
-          start: start ? formatTime(start) : '',
-          end: end ? formatTime(end) : '',
-          breakMin,
-          workMin,
-          normalOtMin,
-          deepOtMin: start && end ? 0 : null,
-          holidayWorkMin,
-          holidayDeepMin: start && end ? 0 : null
-        };
-      }
-
-      function buildAttendanceSheet(items) {
-        const first = items[0];
-        const [yearText, monthText] = first.ym.split('-');
-        const year = Number(yearText);
-        const month = Number(monthText);
-        const days = daysInMonthPlusNextFirst(year, month);
-        const byDate = new Map(items.map(item => [item.date, item]));
-        const attendanceDays = items.filter(i => i.start && !i.isHoliday).length;
-        const holidayDays = items.filter(i => i.start && i.isHoliday).length;
-        const lateDays = items.filter(i => i.isLate).length;
-        const storeCounts = countStores(items);
-        const totalWorkMin = sum(items, 'workMin');
-        const totalNormalOtMin = sum(items, 'normalOtMin');
-        const totalDeepOtMin = sum(items, 'deepOtMin');
-        const totalHolidayWorkMin = sum(items, 'holidayWorkMin');
-        const totalHolidayDeepMin = sum(items, 'holidayDeepMin');
-
-        const rows = [];
-        const storeNames = Object.keys(storeCounts);
-        const storeHeaderTop = storeNames.slice(0, Math.ceil(storeNames.length / 2));
-        const storeHeaderBottom = storeNames.slice(Math.ceil(storeNames.length / 2));
-
-        rows.push(['', '', '要出勤日数','出勤日数','欠勤日数','遅刻日数','早退日数','休日出勤','有給休暇', ...storeHeaderTop]);
-        rows.push(['', '', null, attendanceDays, null, lateDays, 0, holidayDays, 0, ...storeHeaderTop.map(s => storeCounts[s] || 0)]); // 要出勤日数・欠勤日数は人/月ごとに異なるため必ず空欄
-        rows.push(['氏名', '', '勤務時間','普通残業時間','深夜残業時間','休日労働時間','休日深夜残業時間', '', '', ...storeHeaderBottom]);
-        rows.push([first.name || first.employeeId, '', minutesToTime(totalWorkMin), minutesToTime(totalNormalOtMin), minutesToTime(totalDeepOtMin), minutesToTime(totalHolidayWorkMin), minutesToTime(totalHolidayDeepMin), '', '', ...storeHeaderBottom.map(s => storeCounts[s] || 0)]);
-        rows.push(detailHeaders);
-        days.forEach(d => {
-          const dateKey = formatDateKey(d);
-          const item = byDate.get(dateKey);
-          rows.push([
-            dateKey,
-            getJapaneseDay(d),
-            item ? item.store : '',
-            '',
-            '',
-            item ? item.start : '',
-            item ? item.end : '',
-            item && item.hasBothPunches ? minutesToTime(item.breakMin) : '',
-            item && item.hasBothPunches ? minutesToTime(item.workMin) : '',
-            item && item.hasBothPunches ? minutesToTime(item.normalOtMin) : '',
-            item && item.hasBothPunches ? minutesToTime(item.deepOtMin) : '',
-            item && item.hasBothPunches ? minutesToTime(item.holidayWorkMin) : '',
-            item && item.hasBothPunches ? minutesToTime(item.holidayDeepMin) : ''
-          ]);
-        });
-        return rows;
-      }
-
-      function buildAttendanceIssueSheet(issueRows) {
-        const rows = [['社員ID','氏名','日付','曜日','店舗','出勤時刻','退勤時刻','内容']];
-        issueRows.forEach(item => {
-          const dateObj = parseDateTime(item.date);
-          rows.push([
-            item.employeeId,
-            item.name,
-            item.date,
-            dateObj ? getJapaneseDay(dateObj) : '',
-            item.store,
-            item.start,
-            item.end,
-            item.missingType || '打刻漏れ'
-          ]);
-        });
-        return rows;
-      }
-
-      function parseDelimitedText(text) {
-        const firstLine = text.split(/\r?\n/)[0] || '';
-        const tabCount = (firstLine.match(/\t/g) || []).length;
-        const commaCount = (firstLine.match(/,/g) || []).length;
-        const delimiter = tabCount > commaCount ? '\t' : ',';
-        return parseCsvLike(text, delimiter);
-      }
-
-      function parseCsvLike(text, delimiter) {
-        const rows = [];
-        let row = [], cell = '', inQuotes = false;
-        for (let i = 0; i < text.length; i++) {
-          const char = text[i], nextChar = text[i + 1];
-          if (char === '"' && inQuotes && nextChar === '"') { cell += '"'; i++; }
-          else if (char === '"') { inQuotes = !inQuotes; }
-          else if (char === delimiter && !inQuotes) { row.push(cell); cell = ''; }
-          else if ((char === '\n' || char === '\r') && !inQuotes) {
-            if (char === '\r' && nextChar === '\n') i++;
-            row.push(cell); rows.push(row); row = []; cell = '';
-          } else { cell += char; }
-        }
-        if (cell !== '' || row.length > 0) { row.push(cell); rows.push(row); }
-        return rows;
-      }
-
-      function rowToObject(headers, row) {
-        const obj = {};
-        headers.forEach((header, index) => { obj[header] = row[index] !== undefined ? String(row[index]).trim() : ''; });
-        return obj;
-      }
-      function getValue(obj, headerName) { return obj[normalizeHeader(headerName)] !== undefined ? obj[normalizeHeader(headerName)] : ''; }
-      function normalizeHeader(value) { return String(value || '').replace(/^\uFEFF/, '').replace(/\r?\n/g, '').trim(); }
-      function employmentToId(value) { const v = String(value || '').trim(); if (v === '正社員' || v === '1') return '1'; if (v === 'アルバイト' || v === '2') return '2'; return ''; }
-      function normalizeBirthdate(value) { return String(value || '').replace(/[^0-9]/g, '').slice(0, 8); }
-
-      function parseDateTime(value) {
-        const v = String(value || '').trim();
-        if (!v) return null;
-        const excelSerial = Number(v);
-        if (!Number.isNaN(excelSerial) && excelSerial > 20000 && excelSerial < 80000) {
-          return new Date(Math.round((excelSerial - 25569) * 86400 * 1000));
-        }
-        const cleaned = v
-          .replace(/[年月]/g, '/')
-          .replace(/日/g, '')
-          .replace(/[時]/g, ':')
-          .replace(/[分秒]/g, '')
-          .replace(/-/g, '/')
-          .replace('T', ' ')
-          .trim();
-        const m = cleaned.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2})(?::(\d{1,2}))?(?::(\d{1,2}))?)?/);
-        if (!m) return null;
-        return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] || 0), Number(m[5] || 0), Number(m[6] || 0));
-      }
-
-      function formatDateKey(date) { return date.getFullYear() + '/' + String(date.getMonth() + 1).padStart(2, '0') + '/' + String(date.getDate()).padStart(2, '0'); }
-      function formatTime(date) { return String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0'); }
-      function minutesToTime(minutes) { const total = Math.max(0, Number(minutes || 0)); return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0'); }
-      function getJapaneseDay(date) { return ['日','月','火','水','木','金','土'][date.getDay()]; }
-      function isWeekend(date) { return date.getDay() === 0 || date.getDay() === 6; }
-
-      function getScheduledTimes(date) {
-        if (!date) return null;
-        const day = date.getDay();
-        if (day === 0) return { startMin: 10 * 60, endMin: 18 * 60 };
-        if (day === 6) return { startMin: 10 * 60, endMin: 20 * 60 };
-        return { startMin: 11 * 60, endMin: 22 * 60 };
-      }
-      function minutesFromDate(date) { return date.getHours() * 60 + date.getMinutes(); }
-      function sum(items, key) { return items.reduce((total, item) => total + Number(item[key] || 0), 0); }
-      function daysInMonthPlusNextFirst(year, month) {
-        const arr = [];
-        const d = new Date(year, month - 1, 1);
-        while (d.getMonth() === month - 1) { arr.push(new Date(d)); d.setDate(d.getDate() + 1); }
-        arr.push(new Date(year, month, 1));
-        return arr;
-      }
-      function countStores(items) {
-        const obj = {};
-        items.forEach(i => { if (i.store && i.start) obj[i.store] = (obj[i.store] || 0) + 1; });
-        return obj;
-      }
-      function safeSheetName(name) { return String(name || 'sheet').replace(/[\\/:?*\[\]]/g, '').slice(0, 31) || 'sheet'; }
-      function maxColumnCount(rows) { return rows.length ? Math.max(...rows.map(r => r.length)) : 0; }
-
-      function renderPreview(rows) {
-        const preview = el('preview');
-        preview.innerHTML = '';
-        if (!rows || rows.length === 0) { renderEmptyPreview(); return; }
-        const table = document.createElement('table');
-        const maxRows = Math.min(rows.length, 160);
-        const maxCols = maxColumnCount(rows.slice(0, maxRows));
-        for (let i = 0; i < maxRows; i++) {
-          const tr = document.createElement('tr');
-          for (let colIndex = 0; colIndex < maxCols; colIndex++) {
-            const isHeaderRow = currentPattern === 'hrmos' ? i === 0 : i === 4;
-            const cellElement = isHeaderRow ? document.createElement('th') : document.createElement('td');
-            const className = getPreviewCellClass(i, colIndex);
-            if (className) cellElement.classList.add(className);
-            cellElement.textContent = rows[i] ? (rows[i][colIndex] ?? '') : '';
-            if (!isHeaderRow) {
-              cellElement.contentEditable = 'true';
-              cellElement.addEventListener('input', () => {
-                if (!convertedRows[i]) convertedRows[i] = [];
-                convertedRows[i][colIndex] = cellElement.textContent;
-                if (excelSheets[0] && excelSheets[0].rows[i]) excelSheets[0].rows[i][colIndex] = cellElement.textContent;
-              });
-            }
-            tr.appendChild(cellElement);
-          }
-          table.appendChild(tr);
-        }
-        preview.appendChild(table);
-      }
-
-
-      function getPreviewCellClass(rowIndex, colIndex) {
-        if (currentPattern !== 'attendance') return '';
-        if (rowIndex >= 0 && rowIndex <= 3) {
-          return colIndex >= 9 ? 'cell-store-summary' : 'cell-summary';
-        }
-        if (rowIndex === 4) return 'cell-detail-header';
-        if (rowIndex >= 5 && (colIndex === 0 || colIndex === 1)) return 'cell-date-weekday';
-        return '';
-      }
-
-      function renderEmptyPreview() {
-        setHtml('preview', '<div class="empty-preview">左側からCSVを選択して「CSVを整形する」を押すと、<br>ここに変更後のファイル内容が表示されます。</div>');
-        setText('previewCount', '未読み込み');
-      }
-
-      function escapeCsvCell(value) { const v = String(value ?? ''); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
-      function downloadCsv() {
-        if (!convertedRows.length) { setStatus('先にCSVを整形してください。', 'error'); return; }
-        const csvText = convertedRows.map(row => row.map(escapeCsvCell).join(',')).join('\r\n');
-        const blob = new Blob(['\uFEFF' + csvText], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = (currentPattern === 'hrmos' ? 'hrmos_import_' : 'attendance_preview_') + todayYmd() + '.csv';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-      }
-      function downloadExcel() {
-        if (!excelSheets.length) { setStatus('先にCSVを整形してください。', 'error'); return; }
-        if (!window.XLSX) { setStatus('Excel出力ライブラリの読み込みに失敗しました。インターネット接続を確認してください。', 'error'); return; }
-        const wb = XLSX.utils.book_new();
-        excelSheets.forEach(sheet => {
-          const ws = XLSX.utils.aoa_to_sheet(sheet.rows);
-          ws['!cols'] = makeColumnWidths(sheet.rows);
-          applyExcelStyles(ws, sheet.rows, sheet.name);
-          XLSX.utils.book_append_sheet(wb, ws, safeSheetName(sheet.name));
-        });
-        XLSX.writeFile(wb, (currentPattern === 'hrmos' ? 'hrmos_import_' : 'attendance_summary_') + todayYmd() + '.xlsx');
-      }
-
-      function applyExcelStyles(ws, rows, sheetName) {
-        if (!ws || !rows || !rows.length) return;
-        const range = XLSX.utils.decode_range(ws['!ref']);
-        const thinBorder = {
-          top: { style: 'thin', color: { rgb: 'D9E2EC' } },
-          bottom: { style: 'thin', color: { rgb: 'D9E2EC' } },
-          left: { style: 'thin', color: { rgb: 'D9E2EC' } },
-          right: { style: 'thin', color: { rgb: 'D9E2EC' } }
-        };
-        for (let R = range.s.r; R <= range.e.r; ++R) {
-          for (let C = range.s.c; C <= range.e.c; ++C) {
-            const addr = XLSX.utils.encode_cell({ r: R, c: C });
-            if (!ws[addr]) ws[addr] = { t: 's', v: '' };
-            const style = {
-              border: thinBorder,
-              alignment: { vertical: 'center', horizontal: 'center' },
-              font: { name: 'Arial', sz: 10 }
-            };
-            if (currentPattern === 'attendance' && sheetName !== '打刻漏れ一覧') {
-              if (R >= 0 && R <= 3) {
-                style.fill = { patternType: 'solid', fgColor: { rgb: C >= 9 ? 'FCE7F3' : 'E0F2FE' } };
-                if (R === 0 || R === 2) style.font = { name: 'Arial', sz: 10, bold: true };
-              }
-              if (R === 4) {
-                style.fill = { patternType: 'solid', fgColor: { rgb: 'E5E7EB' } };
-                style.font = { name: 'Arial', sz: 10, bold: true };
-              }
-              if (R >= 5 && (C === 0 || C === 1)) {
-                style.fill = { patternType: 'solid', fgColor: { rgb: 'F3F4F6' } };
-              }
-            } else if (R === 0) {
-              style.fill = { patternType: 'solid', fgColor: { rgb: 'E5E7EB' } };
-              style.font = { name: 'Arial', sz: 10, bold: true };
-            }
-            ws[addr].s = style;
-          }
-        }
-      }
-
-      function makeColumnWidths(rows) {
-        const maxCols = maxColumnCount(rows);
-        const widths = [];
-        for (let c = 0; c < maxCols; c++) {
-          const maxLen = Math.max(8, ...rows.map(r => String(r[c] ?? '').length));
-          widths.push({ wch: Math.min(18, maxLen + 2) });
-        }
-        return widths;
-      }
-      function resetTool() {
-        el('csvFile').value = '';
-        convertedRows = [];
-        excelSheets = [];
-        attendanceIssueCount = 0;
-        setDisabled('downloadCsvBtn', true);
-        setDisabled('downloadExcelBtn', true);
-        renderEmptyPreview();
-        setStatus('CSVファイルを選択してください。', '');
-      }
-      function todayYmd() {
-        const now = new Date();
-        return now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0');
-      }
-      function setStatus(message, type) {
-        const status = el('status');
-        status.textContent = message;
-        status.className = 'status';
-        if (type) status.classList.add(type);
-      }
-
-      init();
-    });
-  </script>
+  <script src="./patterns.js"></script>
+  <script src="./app.js"></script>
 </body>
 </html>
