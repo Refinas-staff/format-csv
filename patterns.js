@@ -5,18 +5,16 @@
     stores: "FCE4EC",
     detailHeader: "D9D9D9",
     dateColumns: "F2F2F2",
+    header: "E5E7EB",
     white: "FFFFFF"
   };
-
-  const attendanceHeaders = [
-    "月", "曜日", "店舗", "勤怠", "", "始業時刻", "終業時刻", "休憩", "勤務時間",
-    "普通残業時間", "深夜残業時間", "休日労働時間", "休日深夜残業時間"
-  ];
 
   const jpWeekdays = ["日", "月", "火", "水", "木", "金", "土"];
 
   function onlyDigits(value) {
-    return String(value || "").replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).replace(/\D/g, "");
+    return String(value || "")
+      .replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0))
+      .replace(/\D/g, "");
   }
 
   function formatBirthdatePassword(value) {
@@ -24,9 +22,88 @@
     return digits.length >= 8 ? digits.slice(0, 8) : digits;
   }
 
+  function splitName(value) {
+    const name = String(value || "").trim().replace(/\s+/g, " ");
+    if (!name) return { lastName: "", firstName: "" };
+
+    const parts = name.split(" ");
+    if (parts.length >= 2) {
+      return {
+        lastName: parts[0],
+        firstName: parts.slice(1).join("")
+      };
+    }
+
+    return {
+      lastName: name,
+      firstName: ""
+    };
+  }
+
+  function normalizeDate(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+
+    const normalized = raw
+      .replace(/[年月]/g, "/")
+      .replace(/日/g, "")
+      .replace(/-/g, "/")
+      .replace(/\./g, "/");
+
+    const match = normalized.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+    if (!match) return raw;
+
+    return [
+      match[1],
+      String(Number(match[2])).padStart(2, "0"),
+      String(Number(match[3])).padStart(2, "0")
+    ].join("/");
+  }
+
+  function monthToFirstDate(value) {
+    const raw = String(value || "").trim();
+    const match = raw.match(/^(\d{4})-(\d{2})$/);
+    if (!match) return "";
+    return `${match[1]}/${match[2]}/01`;
+  }
+
+  function monthToFirstDateAfterMonths(value, addMonths) {
+    const raw = String(value || "").trim();
+    const match = raw.match(/^(\d{4})-(\d{2})$/);
+    if (!match) return "";
+
+    const date = new Date(Number(match[1]), Number(match[2]) - 1 + addMonths, 1);
+
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, "0"),
+      "01"
+    ].join("/");
+  }
+
+  function parseFlexibleDate(value) {
+    const normalized = normalizeDate(value);
+    const match = normalized.match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
+    if (!match) return new Date(9999, 11, 31);
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  }
+
+  function sortByStoreAndRegisteredDate(rows) {
+    return rows.slice().sort((a, b) => {
+      const storeA = String(a["登録店舗"] || "").trim();
+      const storeB = String(b["登録店舗"] || "").trim();
+
+      const storeCompare = storeA.localeCompare(storeB, "ja");
+      if (storeCompare !== 0) return storeCompare;
+
+      return parseFlexibleDate(a["会員登録日"]) - parseFlexibleDate(b["会員登録日"]);
+    });
+  }
+
   function normalizeDateTime(value) {
     const raw = String(value || "").trim();
     if (!raw) return null;
+
     const normalized = raw
       .replace(/[年月]/g, "/")
       .replace(/日/g, "")
@@ -84,12 +161,18 @@
   function monthDateKeys(year, monthIndex) {
     const keys = [];
     const d = new Date(year, monthIndex, 1);
-    const end = new Date(year, monthIndex + 1, 2); // 翌月1日まで含める
+    const end = new Date(year, monthIndex + 1, 2);
     while (d < end) {
       keys.push(ymd(d));
       d.setDate(d.getDate() + 1);
     }
     return keys;
+  }
+
+  function makeDefaultStyleMatrix(rows) {
+    return rows.map((row, rowIndex) =>
+      row.map(() => rowIndex === 0 ? { fill: COLORS.header, bold: true } : { fill: COLORS.white })
+    );
   }
 
   function makeAttendanceStyleMatrix(rows, storeStartColumnIndex) {
@@ -103,21 +186,24 @@
     }));
   }
 
-  function makeDefaultStyleMatrix(rows) {
-    return rows.map((row, r) => row.map(() => r === 0 ? { fill: "E5E7EB", bold: true } : { fill: COLORS.white }));
-  }
-
   function createAttendanceSheets(inputRows) {
+    const attendanceHeaders = [
+      "月", "曜日", "店舗", "勤怠", "", "始業時刻", "終業時刻", "休憩", "勤務時間",
+      "普通残業時間", "深夜残業時間", "休日労働時間", "休日深夜残業時間"
+    ];
+
     const records = [];
     const rejected = [];
 
     inputRows.forEach((row, index) => {
       const stampedAt = normalizeDateTime(row["打刻日時"]);
       const type = String(row["種別"] || "").trim();
+
       if (!stampedAt || !["出勤", "退勤"].includes(type)) {
         rejected.push({ index: index + 2, row });
         return;
       }
+
       records.push({
         stampedAt,
         dateKey: ymd(stampedAt),
@@ -135,6 +221,7 @@
     records.forEach(rec => {
       const employeeKey = `${rec.employeeId}__${rec.name}`;
       const groupKey = `${employeeKey}__${rec.monthKey}`;
+
       if (!employeeMonthMap.has(groupKey)) employeeMonthMap.set(groupKey, []);
       employeeMonthMap.get(groupKey).push(rec);
 
@@ -149,10 +236,12 @@
 
     for (const [groupKey, groupRecords] of employeeMonthMap.entries()) {
       groupRecords.sort((a, b) => a.stampedAt - b.stampedAt);
+
       const first = groupRecords[0];
       const [yearText, monthText] = first.monthKey.split("-");
       const year = Number(yearText);
       const monthIndex = Number(monthText) - 1;
+
       const stores = Array.from(allStoresByEmployeeMonth.get(groupKey) || []).sort((a, b) => a.localeCompare(b, "ja"));
       const storeStartColumnIndex = 9;
       const minColumns = Math.max(attendanceHeaders.length, storeStartColumnIndex + stores.length);
@@ -161,6 +250,7 @@
       const row2 = ["", "", "", 0, "", 0, 0, 0, 0, ...stores.map(() => 0)];
       const row3 = ["氏名", "", "勤務時間", "普通残業時間", "深夜残業時間", "休日労働時間", "休日深夜残業時間"];
       const row4 = [first.name, "", 0, 0, 0, 0, 0];
+
       const rows = [row1, row2, row3, row4, attendanceHeaders.slice()];
       rows.forEach(row => { while (row.length < minColumns) row.push(""); });
 
@@ -180,18 +270,18 @@
       for (const dateKey of monthDateKeys(year, monthIndex)) {
         const d = normalizeDateTime(dateKey);
         const dailyRecords = recordsByDate.get(dateKey) || [];
+
         const inRecords = dailyRecords.filter(r => r.type === "出勤").sort((a, b) => a.stampedAt - b.stampedAt);
         const outRecords = dailyRecords.filter(r => r.type === "退勤").sort((a, b) => a.stampedAt - b.stampedAt);
+
         const firstIn = inRecords[0] || null;
         const lastOut = outRecords[outRecords.length - 1] || null;
         const store = firstIn ? firstIn.store : "";
         const schedule = scheduledFor(d);
+
         let breakMinutes = "";
         let workMinutes = "";
         let overtimeMinutes = "";
-        let deepNightMinutes = 0;
-        let holidayWorkMinutes = 0;
-        let holidayDeepNightMinutes = 0;
 
         if (firstIn) {
           attendanceDays += 1;
@@ -199,7 +289,9 @@
           if (minutesOfDay(firstIn.stampedAt) > schedule.start) lateDays += 1;
         }
 
-        if (lastOut && minutesOfDay(lastOut.stampedAt) < schedule.end) earlyDays += 1;
+        if (lastOut && minutesOfDay(lastOut.stampedAt) < schedule.end) {
+          earlyDays += 1;
+        }
 
         if (firstIn && lastOut && lastOut.stampedAt > firstIn.stampedAt) {
           const spanMinutes = Math.round((lastOut.stampedAt - firstIn.stampedAt) / 60000);
@@ -226,10 +318,11 @@
           minutesToTime(breakMinutes),
           minutesToTime(workMinutes),
           minutesToTime(overtimeMinutes),
-          minutesToTime(deepNightMinutes),
-          minutesToTime(holidayWorkMinutes),
-          minutesToTime(holidayDeepNightMinutes)
+          "0:00",
+          "0:00",
+          "0:00"
         ];
+
         while (detailRow.length < minColumns) detailRow.push("");
         rows.push(detailRow);
       }
@@ -238,19 +331,25 @@
       row2[5] = lateDays;
       row2[6] = earlyDays;
       row2[7] = 0;
-      stores.forEach((store, index) => { row2[storeStartColumnIndex + index] = storeCounts[store] || 0; });
+
+      stores.forEach((store, index) => {
+        row2[storeStartColumnIndex + index] = storeCounts[store] || 0;
+      });
+
       row4[2] = minutesToTime(totalWork);
       row4[3] = minutesToTime(totalOvertime);
       row4[4] = "0:00";
       row4[5] = "0:00";
       row4[6] = "0:00";
 
-      const safeName = `${first.name || first.employeeId || "未設定"}_${first.monthKey}`.replace(/[\\/?*\[\]:]/g, "_").slice(0, 31);
+      const safeName = `${first.name || first.employeeId || "未設定"}_${first.monthKey}`
+        .replace(/[\\/?*\[\]:]/g, "_")
+        .slice(0, 31);
+
       sheets.push({
         name: safeName,
         rows,
-        styleMatrix: makeAttendanceStyleMatrix(rows, storeStartColumnIndex),
-        meta: { employeeId: first.employeeId, name: first.name, monthKey: first.monthKey }
+        styleMatrix: makeAttendanceStyleMatrix(rows, storeStartColumnIndex)
       });
     }
 
@@ -265,6 +364,272 @@
     return {
       sheets,
       warnings: rejected.length ? [`読み取れない行が ${rejected.length} 件ありました。`] : []
+    };
+  }
+
+  const buscatchInputHeaders = [
+    "登録店舗",
+    "名前(カナ)",
+    "名前",
+    "郵便番号",
+    "都道府県",
+    "市区町村",
+    "丁目・番地",
+    "電話番号",
+    "メールアドレス1",
+    "生年月日",
+    "性別",
+    "会員登録日",
+    "ステータス",
+    "年齢",
+    "職業",
+    "初回来店動機",
+    "会員登録区分",
+    "会員種別",
+    "コース"
+  ];
+
+  const studentTemplateHeaders = [
+    "*生徒名前_姓",
+    "生徒名前_名",
+    "生徒ふりがな_姓",
+    "生徒ふりがな_名",
+    "生徒番号",
+    "性別\n(男,女)",
+    "生年月日\n(例:2011/01/01)",
+    "血液型\n(A型,B型,O型,AB型)",
+    "バス利用\n(利用する,利用しない)",
+    "*代表者名前_姓",
+    "代表者名前_名",
+    "代表者ふりがな_姓",
+    "代表者ふりがな_名",
+    "郵便番号",
+    "*都道府県",
+    "*住所1(市区町村以下)",
+    "住所2(建物)",
+    "自宅TEL\n(例:052-123-4567)",
+    "携帯\n(例:090-123-4567)",
+    "入会日\n(例:2011/01/01)",
+    "保険料",
+    "自由メモ",
+    "自由メモ3",
+    "自由メモ4",
+    "自由メモ5",
+    "自由メモ6",
+    "自由メモ7",
+    "自由メモ8",
+    "自由メモ9",
+    "自由メモ10",
+    "携帯続柄",
+    "連絡先1TEL",
+    "TEL1緊急連絡先続柄",
+    "申込日\n(例:2011/01/01)",
+    "*入金方法\n(現金,振込,銀行,ゆうちょ)",
+    "銀行名\n(入金方法が銀行の場合)",
+    "銀行支店名\n(入金方法が銀行の場合)",
+    "銀行 口座種別\n(入金方法が銀行の場合)",
+    "銀行 口座番号\n(入金方法が銀行の場合)",
+    "ゆうちょ 記号1\n(入金方法がゆうちょの場合)",
+    "ゆうちょ 記号2\n(入金方法がゆうちょの場合)",
+    "ゆうちょ 口座番号\n(入金方法がゆうちょの場合)",
+    "口座名義\n(入金方法が銀行かゆうちょの場合)",
+    "顧客番号\n(入金方法が銀行かゆうちょの場合)",
+    "新規コード\n(入金方法がゆうちょの場合)",
+    "取引銀行\n(入金方法が銀行かゆうちょの場合)"
+  ];
+
+  const lessonTemplateHeaders = [
+    "*生徒名前_姓\n(参照のみ)",
+    "*生徒名前_名\n(参照のみ)",
+    "*生徒番号\n(参照のみ)",
+    "*スクール",
+    "*コース",
+    "*級",
+    "予約枠1",
+    "予約枠2",
+    "予約枠3",
+    "予約枠4",
+    "予約枠5",
+    "予約枠6",
+    "予約枠7",
+    "*級の適用開始日\n(例:2011/01/01)",
+    "*受講開始日\n(例:2011/01/01)",
+    "受講終了日\n(例:2011/01/01)",
+    "休止開始日\n(例:2011/01/01)",
+    "休止終了日\n(例:2011/01/01)"
+  ];
+
+  const membershipTemplateHeaders = [
+    "*生徒名前_姓\n(参照のみ)",
+    "*生徒名前_名\n(参照のみ)",
+    "*生徒番号\n(参照のみ)",
+    "*受講開始日\n(参照のみ)",
+    "*スクール\n(参照のみ)",
+    "*コース\n(参照のみ)",
+    "*会員種類",
+    "*請求開始日\n例(2015/1/1)",
+    "月会費\n(請求する、請求しない)",
+    "月会費請求月\n(1月～12月)",
+    "口座振替手数料\n(請求する、請求しない)",
+    "口座振替手数料請求月\n(1月～12月)",
+    "保険料\n(請求する、請求しない)",
+    "保険料請求月\n(1月～12月)",
+    "バス代種類",
+    "ロッカー代種類",
+    "ロッカーNo"
+  ];
+
+  function makeBuscatchStudentRows(rows) {
+    const outputRows = [studentTemplateHeaders];
+
+    rows.forEach(row => {
+      const name = splitName(row["名前"]);
+      const kana = splitName(row["名前(カナ)"]);
+      const registeredDate = normalizeDate(row["会員登録日"]);
+
+      outputRows.push([
+        name.lastName,
+        name.firstName,
+        kana.lastName,
+        kana.firstName,
+        row["登録店舗"] || "",
+        row["性別"] || "",
+        normalizeDate(row["生年月日"]),
+        "",
+        "",
+        name.lastName,
+        name.firstName,
+        kana.lastName,
+        kana.firstName,
+        row["郵便番号"] || "",
+        row["都道府県"] || "",
+        `${row["市区町村"] || ""}${row["丁目・番地"] || ""}`,
+        "",
+        "",
+        row["電話番号"] || "",
+        registeredDate,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        registeredDate,
+        "銀行",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ]);
+    });
+
+    return outputRows;
+  }
+
+  function makeBuscatchLessonRows(rows, startDate) {
+    const outputRows = [lessonTemplateHeaders];
+
+    rows.forEach(row => {
+      const name = splitName(row["名前"]);
+
+      outputRows.push([
+        name.lastName,
+        name.firstName,
+        row["登録店舗"] || "",
+        "キックボクシングスタジオ",
+        row["コース"] || "",
+        "無",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        startDate,
+        startDate,
+        "",
+        "",
+        ""
+      ]);
+    });
+
+    return outputRows;
+  }
+
+  function makeBuscatchMembershipRows(rows, startDate, billingStartDate) {
+    const outputRows = [membershipTemplateHeaders];
+
+    rows.forEach(row => {
+      const name = splitName(row["名前"]);
+      const course = row["コース"] || "";
+
+      outputRows.push([
+        name.lastName,
+        name.firstName,
+        row["登録店舗"] || "",
+        startDate,
+        "キックボクシングスタジオ",
+        course,
+        course,
+        billingStartDate,
+        "請求する",
+        "",
+        "請求する",
+        "",
+        "請求しない",
+        "",
+        "",
+        "",
+        ""
+      ]);
+    });
+
+    return outputRows;
+  }
+
+  function createBuscatchSheets(inputRows, options) {
+    const sortedRows = sortByStoreAndRegisteredDate(inputRows);
+    const startDate = monthToFirstDate(options.enrollmentMonth);
+    const billingStartDate = monthToFirstDateAfterMonths(options.enrollmentMonth, 2);
+
+    const studentRows = makeBuscatchStudentRows(sortedRows);
+    const lessonRows = makeBuscatchLessonRows(sortedRows, startDate);
+    const membershipRows = makeBuscatchMembershipRows(sortedRows, startDate, billingStartDate);
+
+    return {
+      sheets: [
+        {
+          name: "生徒登録テンプレート",
+          rows: studentRows,
+          styleMatrix: makeDefaultStyleMatrix(studentRows)
+        },
+        {
+          name: "受講登録テンプレート",
+          rows: lessonRows,
+          styleMatrix: makeDefaultStyleMatrix(lessonRows)
+        },
+        {
+          name: "会員種類登録テンプレート",
+          rows: membershipRows,
+          styleMatrix: makeDefaultStyleMatrix(membershipRows)
+        }
+      ],
+      warnings: []
     };
   }
 
@@ -292,6 +657,7 @@
       transform(row) {
         const employmentType = String(row["雇用形態"] || "").trim();
         const employeeNumber = String(row["社員番号"] || "").trim();
+
         return {
           "社員ID": "",
           "ログインID": employeeNumber,
@@ -342,6 +708,33 @@
         "要出勤日数・欠勤日数は人と月で異なるため空欄"
       ],
       transformAll: createAttendanceSheets
+    },
+    {
+      id: "buscatch_basic",
+      name: "バスキャッチ登録-基本データ",
+      description: "基本データから、生徒登録・受講登録・会員種類登録の3テンプレートを同時作成します。",
+      type: "custom",
+      outputType: "excel",
+      inputHeaders: buscatchInputHeaders,
+      options: [
+        {
+          key: "enrollmentMonth",
+          label: "入会手続き月",
+          type: "month",
+          required: true,
+          help: "受講開始日・級の適用開始日に月初を使用し、請求開始日は翌々月の月初にします。"
+        }
+      ],
+      rules: [
+        "3シート同時出力：生徒登録テンプレート、受講登録テンプレート、会員種類登録テンプレート",
+        "登録店舗ごとにまとめ、同じ店舗内では会員登録日順に並べます",
+        "全テンプレートの生徒番号には、一旦「登録店舗」を入れます",
+        "受講登録：スクールはキックボクシングスタジオ、級は無",
+        "会員種類登録：コースと会員種類は同じ値",
+        "会員種類登録：請求開始日は入会手続き月の翌々月",
+        "生徒登録：入会日・申込日は元CSVの会員登録日"
+      ],
+      transformAll: createBuscatchSheets
     }
   ];
 })();
