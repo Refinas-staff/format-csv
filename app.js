@@ -205,7 +205,7 @@
 
       const parsed = option.headerRow
         ? parseDelimitedTextWithHeaderRow(text, option.headerRow)
-        : parseDelimitedText(text);
+        : parseDelimitedTextAutoHeader(text, option.inputHeaders || []);
 
       const headers = parsed.headers.map(normalizeHeader);
 
@@ -376,6 +376,56 @@
 
     if (!allRows[headerIndex]) {
       throw new Error(`${headerRow}行目をヘッダーとして読み込めませんでした。`);
+    }
+
+    return {
+      headers: allRows[headerIndex],
+      rows: allRows.slice(headerIndex + 1),
+      delimiter
+    };
+  }
+
+  function parseDelimitedTextAutoHeader(text, requiredHeaders) {
+    const cleanText = text.replace(/^\uFEFF/, "");
+    const delimiter = detectDelimiter(cleanText);
+
+    const allRows = parseCsvLike(cleanText, delimiter).filter(row =>
+      row.some(cell => String(cell).trim() !== "")
+    );
+
+    if (!allRows.length) {
+      throw new Error("CSVが空です。");
+    }
+
+    const normalizedRequiredHeaders = (requiredHeaders || []).map(normalizeHeader);
+
+    if (!normalizedRequiredHeaders.length) {
+      throw new Error("自動検出に必要な列名が設定されていません。");
+    }
+
+    let headerIndex = -1;
+
+    for (let i = 0; i < allRows.length; i++) {
+      const candidateHeaders = allRows[i].map(normalizeHeader);
+
+      const hitCount = normalizedRequiredHeaders.filter(header =>
+        candidateHeaders.includes(header)
+      ).length;
+
+      if (hitCount >= Math.min(3, normalizedRequiredHeaders.length)) {
+        headerIndex = i;
+        break;
+      }
+    }
+
+    if (headerIndex === -1) {
+      const sampleRows = allRows.slice(0, 8).map((row, index) => {
+        return `${index + 1}行目: ${row.map(normalizeHeader).join(" / ")}`;
+      }).join("\n");
+
+      throw new Error(
+        `口座CSVの列名行を自動検出できませんでした。\n必要な列: ${normalizedRequiredHeaders.join(", ")}\n\n先頭8行:\n${sampleRows}`
+      );
     }
 
     return {
