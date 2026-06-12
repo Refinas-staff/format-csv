@@ -659,6 +659,22 @@
     "取引銀行\n(入金方法が銀行かゆうちょの場合)"
   ];
 
+  const accountCheckHeaders = [
+    "元ファイル名",
+    "反映結果",
+    "照合キー",
+    "名簿側ふりがな",
+    "委託者カナ氏名",
+    "銀行名",
+    "支店名",
+    "支店コード",
+    "口座番号",
+    "預金種別",
+    "口座名義人",
+    "取引銀行",
+    "備考"
+  ];
+
   function normalizeAplusName(value) {
     const normalized = String(value || "")
       .normalize("NFKC")
@@ -697,7 +713,8 @@
   function createAccountIndex(accountRows) {
     const index = new Map();
 
-    accountRows.forEach(row => {
+    accountRows.forEach((row, indexNumber) => {
+      row.__accountRowId = `account_${indexNumber}`;
       const key = normalizeKanaKey(row["口座名義人"]);
 
       if (!key) return;
@@ -712,23 +729,69 @@
     return index;
   }
 
+  function createAccountCheckRows(accountRows, accountStatusMap) {
+    const rows = [accountCheckHeaders];
+
+    accountRows.forEach(row => {
+      const rowId = row.__accountRowId;
+      const statusInfo = accountStatusMap.get(rowId) || {
+        status: "未使用",
+        rosterKana: "",
+        note: "名簿側に一致するデータがありません。"
+      };
+
+      rows.push([
+        row.__sourceFileName || "",
+        statusInfo.status,
+        normalizeKanaKey(row["口座名義人"]),
+        statusInfo.rosterKana || "",
+        row["委託者カナ氏名"] || "",
+        row["銀行名"] || "",
+        row["支店名"] || "",
+        row["支店コード"] || "",
+        cleanAccountNumber(row["口座番号"]),
+        row["預金種別"] || "",
+        row["口座名義人"] || "",
+        normalizeAplusName(row["委託者カナ氏名"]),
+        statusInfo.note || ""
+      ]);
+    });
+
+    return rows;
+  }
+
   function createAccountMatchSheets(rosterRows, options) {
     const accountRows = options.accountCsvRows || [];
     const accountIndex = createAccountIndex(accountRows);
+    const accountStatusMap = new Map();
+
     const outputRows = [accountMatchOutputHeaders];
 
     let matchedCount = 0;
     let unmatchedCount = 0;
     let duplicateCount = 0;
+    let unknownAccountNumberCount = 0;
 
     rosterRows.forEach(row => {
       const kanaLast = row["生徒ふりがな_姓"] || "";
       const kanaFirst = row["生徒ふりがな_名"] || "";
-      const matchKey = normalizeKanaKey(`${kanaLast}${kanaFirst}`);
+      const rosterKana = `${kanaLast}${kanaFirst}`;
+      const matchKey = normalizeKanaKey(rosterKana);
       const matches = accountIndex.get(matchKey) || [];
 
       if (matches.length !== 1) {
-        if (matches.length > 1) duplicateCount += 1;
+        if (matches.length > 1) {
+          duplicateCount += 1;
+
+          matches.forEach(accountRow => {
+            accountStatusMap.set(accountRow.__accountRowId, {
+              status: "複数一致",
+              rosterKana,
+              note: "同じ口座名義人が複数あるため、自動反映していません。"
+            });
+          });
+        }
+
         if (matches.length === 0) unmatchedCount += 1;
 
         outputRows.push([
@@ -750,8 +813,6 @@
         return;
       }
 
-      matchedCount += 1;
-
       const account = matches[0];
       const accountNumber = cleanAccountNumber(account["口座番号"]);
       const paymentType = getPaymentType(accountNumber);
@@ -763,6 +824,14 @@
       const transactionBank = normalizeAplusName(account["委託者カナ氏名"]);
 
       if (paymentType === "銀行") {
+        matchedCount += 1;
+
+        accountStatusMap.set(account.__accountRowId, {
+          status: "反映済み",
+          rosterKana,
+          note: "銀行口座として名簿に反映しました。"
+        });
+
         outputRows.push([
           kanaLast,
           kanaFirst,
@@ -783,7 +852,15 @@
       }
 
       if (paymentType === "ゆうちょ") {
+        matchedCount += 1;
+
         const parts = accountNumber.split("-");
+
+        accountStatusMap.set(account.__accountRowId, {
+          status: "反映済み",
+          rosterKana,
+          note: "ゆうちょ口座として名簿に反映しました。"
+        });
 
         outputRows.push([
           kanaLast,
@@ -804,6 +881,14 @@
         return;
       }
 
+      unknownAccountNumberCount += 1;
+
+      accountStatusMap.set(account.__accountRowId, {
+        status: "口座番号不明",
+        rosterKana,
+        note: "名義は一致しましたが、口座番号から銀行/ゆうちょを判定できなかったため、現金にしています。"
+      });
+
       outputRows.push([
         kanaLast,
         kanaFirst,
@@ -822,10 +907,14 @@
       ]);
     });
 
+    const accountCheckRows = createAccountCheckRows(accountRows, accountStatusMap);
+
     const warnings = [
       `一致: ${matchedCount}件`,
       `未一致: ${unmatchedCount}件`,
-      `複数一致: ${duplicateCount}件`
+      `複数一致: ${duplicateCount}件`,
+      `口座番号不明: ${unknownAccountNumberCount}件`,
+      `口座CSV読込件数: ${accountRows.length}件`
     ];
 
     return {
@@ -834,6 +923,11 @@
           name: "口座名義名寄せ",
           rows: outputRows,
           styleMatrix: makeDefaultStyleMatrix(outputRows)
+        },
+        {
+          name: "口座CSV確認用",
+          rows: accountCheckRows,
+          styleMatrix: makeDefaultStyleMatrix(accountCheckRows)
         }
       ],
       warnings
@@ -949,9 +1043,9 @@
     {
       id: "account_name_match",
       name: "口座名義 名寄せ",
-      description: "名簿CSVと口座CSVを照合し、入金方法・口座情報を出力します。",
+      description: "名簿CSVと複数の口座CSVを照合し、入金方法・口座情報・反映確認用シートを出力します。",
       type: "custom",
-      outputType: "csv",
+      outputType: "excel",
       mainFileLabel: "名簿CSVを選択",
       inputHeaders: ["生徒ふりがな_姓", "生徒ふりがな_名"],
       options: [
@@ -960,7 +1054,8 @@
           label: "口座CSV",
           type: "file",
           required: true,
-          help: "口座CSVの中から列名行を自動検出します。口座名義人で照合します。委託者カナ氏名は取引銀行に使用します。",
+          multiple: true,
+          help: "複数選択できます。口座CSVの中から列名行を自動検出します。口座名義人で照合します。",
           inputHeaders: [
             "委託者カナ氏名",
             "銀行名",
@@ -971,6 +1066,11 @@
         }
       ],
       rules: [
+        "口座CSVは複数ファイルを選択できます",
+        "選択した複数の口座CSVをまとめて照合します",
+        "Excelで2シート出力します：口座名義名寄せ、口座CSV確認用",
+        "口座CSV確認用には、元ファイル名・反映結果・備考を出力します",
+        "反映結果は、反映済み・未使用・複数一致・口座番号不明です",
         "名簿側は「生徒ふりがな_姓 + 生徒ふりがな_名」で照合します",
         "口座CSV側は「口座名義人」のみで照合します",
         "照合時は全角・半角スペースを削除し、半角カナは全角カナに寄せます",
