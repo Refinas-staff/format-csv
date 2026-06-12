@@ -665,6 +665,7 @@
     "照合キー",
     "名簿側ふりがな",
     "委託者カナ氏名",
+    "取扱時刻",
     "銀行名",
     "支店名",
     "支店コード",
@@ -729,36 +730,37 @@
     return index;
   }
 
-  function createAccountCheckRows(accountRows, accountStatusMap) {
-    const rows = [accountCheckHeaders];
+function createAccountCheckRows(accountRows, accountStatusMap) {
+  const rows = [accountCheckHeaders];
 
-    accountRows.forEach(row => {
-      const rowId = row.__accountRowId;
-      const statusInfo = accountStatusMap.get(rowId) || {
-        status: "未使用",
-        rosterKana: "",
-        note: "名簿側に一致するデータがありません。"
-      };
+  accountRows.forEach(row => {
+    const rowId = row.__accountRowId;
+    const statusInfo = accountStatusMap.get(rowId) || {
+      status: "未使用",
+      rosterKana: "",
+      note: "名簿側に一致するデータがありません。"
+    };
 
-      rows.push([
-        row.__sourceFileName || "",
-        statusInfo.status,
-        normalizeKanaKey(row["口座名義人"]),
-        statusInfo.rosterKana || "",
-        row["委託者カナ氏名"] || "",
-        row["銀行名"] || "",
-        row["支店名"] || "",
-        row["支店コード"] || "",
-        cleanAccountNumber(row["口座番号"]),
-        row["預金種別"] || "",
-        row["口座名義人"] || "",
-        normalizeAplusName(row["委託者カナ氏名"]),
-        statusInfo.note || ""
-      ]);
-    });
+    rows.push([
+      row.__sourceFileName || "",
+      statusInfo.status,
+      normalizeKanaKey(row["口座名義人"]),
+      statusInfo.rosterKana || "",
+      row["委託者カナ氏名"] || "",
+      row["取扱時刻"] || "",
+      row["銀行名"] || "",
+      row["支店名"] || "",
+      row["支店コード"] || "",
+      cleanAccountNumber(row["口座番号"]),
+      row["預金種別"] || "",
+      row["口座名義人"] || "",
+      normalizeAplusName(row["委託者カナ氏名"]),
+      statusInfo.note || ""
+    ]);
+  });
 
-    return rows;
-  }
+  return rows;
+}
 
   function createAccountMatchSheets(rosterRows, options) {
     const accountRows = options.accountCsvRows || [];
