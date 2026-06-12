@@ -17,6 +17,13 @@
       .replace(/\D/g, "");
   }
 
+  function normalizeKanaKey(value) {
+    return String(value || "")
+      .normalize("NFKC")
+      .replace(/[\s　\t\r\n]/g, "")
+      .trim();
+  }
+
   function formatBirthdatePassword(value) {
     const digits = onlyDigits(value);
     return digits.length >= 8 ? digits.slice(0, 8) : digits;
@@ -162,10 +169,12 @@
     const keys = [];
     const d = new Date(year, monthIndex, 1);
     const end = new Date(year, monthIndex + 1, 2);
+
     while (d < end) {
       keys.push(ymd(d));
       d.setDate(d.getDate() + 1);
     }
+
     return keys;
   }
 
@@ -633,6 +642,203 @@
     };
   }
 
+  const accountMatchOutputHeaders = [
+    "生徒ふりがな_姓",
+    "生徒ふりがな_名",
+    "*入金方法\n(現金,振込,銀行,ゆうちょ)",
+    "銀行名\n(入金方法が銀行の場合)",
+    "銀行支店名\n(入金方法が銀行の場合)",
+    "銀行 口座種別\n(入金方法が銀行の場合)",
+    "銀行 口座番号\n(入金方法が銀行の場合)",
+    "ゆうちょ 記号1\n(入金方法がゆうちょの場合)",
+    "ゆうちょ 記号2\n(入金方法がゆうちょの場合)",
+    "ゆうちょ 口座番号\n(入金方法がゆうちょの場合)",
+    "口座名義\n(入金方法が銀行かゆうちょの場合)",
+    "顧客番号\n(入金方法が銀行かゆうちょの場合)",
+    "新規コード\n(入金方法がゆうちょの場合)",
+    "取引銀行\n(入金方法が銀行かゆうちょの場合)"
+  ];
+
+  function normalizeAplusName(value) {
+    const normalized = String(value || "")
+      .normalize("NFKC")
+      .replace(/[\s　]/g, "")
+      .trim();
+
+    if (normalized.includes("アプラス")) {
+      return "アプラス";
+    }
+
+    return normalized;
+  }
+
+  function cleanAccountNumber(value) {
+    return String(value || "")
+      .normalize("NFKC")
+      .replace(/^'/, "")
+      .replace(/[\s　]/g, "")
+      .trim();
+  }
+
+  function getPaymentType(accountNumber) {
+    const num = cleanAccountNumber(accountNumber);
+
+    if (/^\d{5}-\d{8}$/.test(num)) {
+      return "ゆうちょ";
+    }
+
+    if (/^\d+$/.test(num)) {
+      return "銀行";
+    }
+
+    return "現金";
+  }
+
+  function createAccountIndex(accountRows) {
+    const index = new Map();
+
+    accountRows.forEach(row => {
+      const key = normalizeKanaKey(row["口座名義人"]);
+
+      if (!key) return;
+
+      if (!index.has(key)) {
+        index.set(key, []);
+      }
+
+      index.get(key).push(row);
+    });
+
+    return index;
+  }
+
+  function createAccountMatchSheets(rosterRows, options) {
+    const accountRows = options.accountCsvRows || [];
+    const accountIndex = createAccountIndex(accountRows);
+    const outputRows = [accountMatchOutputHeaders];
+
+    let matchedCount = 0;
+    let unmatchedCount = 0;
+    let duplicateCount = 0;
+
+    rosterRows.forEach(row => {
+      const kanaLast = row["生徒ふりがな_姓"] || "";
+      const kanaFirst = row["生徒ふりがな_名"] || "";
+      const matchKey = normalizeKanaKey(`${kanaLast}${kanaFirst}`);
+      const matches = accountIndex.get(matchKey) || [];
+
+      if (matches.length !== 1) {
+        if (matches.length > 1) duplicateCount += 1;
+        if (matches.length === 0) unmatchedCount += 1;
+
+        outputRows.push([
+          kanaLast,
+          kanaFirst,
+          "現金",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]);
+        return;
+      }
+
+      matchedCount += 1;
+
+      const account = matches[0];
+      const accountNumber = cleanAccountNumber(account["口座番号"]);
+      const paymentType = getPaymentType(accountNumber);
+      const bankName = account["銀行名"] || "";
+      const depositType = account["預金種別"] || "";
+      const accountHolder = account["口座名義人"] || "";
+      const customerNumber = account["委託者番号"] || "";
+      const transactionBank = normalizeAplusName(account["委託者カナ氏名"]);
+
+      if (paymentType === "銀行") {
+        outputRows.push([
+          kanaLast,
+          kanaFirst,
+          "銀行",
+          bankName,
+          "",
+          depositType,
+          accountNumber,
+          "",
+          "",
+          "",
+          accountHolder,
+          customerNumber,
+          "",
+          transactionBank
+        ]);
+        return;
+      }
+
+      if (paymentType === "ゆうちょ") {
+        const parts = accountNumber.split("-");
+
+        outputRows.push([
+          kanaLast,
+          kanaFirst,
+          "ゆうちょ",
+          "",
+          "",
+          "",
+          "",
+          parts[0] || "",
+          "",
+          parts[1] || "",
+          accountHolder,
+          customerNumber,
+          "",
+          transactionBank
+        ]);
+        return;
+      }
+
+      outputRows.push([
+        kanaLast,
+        kanaFirst,
+        "現金",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ]);
+    });
+
+    const warnings = [
+      `一致: ${matchedCount}件`,
+      `未一致: ${unmatchedCount}件`,
+      `複数一致: ${duplicateCount}件`
+    ];
+
+    return {
+      sheets: [
+        {
+          name: "口座名義名寄せ",
+          rows: outputRows,
+          styleMatrix: makeDefaultStyleMatrix(outputRows)
+        }
+      ],
+      warnings
+    };
+  }
+
   window.CsvToolPatterns = [
     {
       id: "hrmos_employee",
@@ -640,6 +846,7 @@
       description: "社員情報CSVをHRMOS勤怠の取込形式に整形します。",
       type: "row",
       outputType: "csv",
+      mainFileLabel: "社員CSVを選択",
       inputHeaders: ["社員番号", "姓", "名", "セイ", "メイ", "生年月日", "メールアドレス", "雇用形態"],
       outputHeaders: [
         "社員ID", "ログインID", "パスワード", "社員番号", "姓", "名", "セイ", "メイ", "メールアドレス",
@@ -699,6 +906,7 @@
       description: "打刻データから社員別・月別の勤怠表を作成します。",
       type: "custom",
       outputType: "excel",
+      mainFileLabel: "打刻CSVを選択",
       inputHeaders: ["打刻日時", "社員ID", "氏名", "種別", "拠点名"],
       rules: [
         "出勤打刻の拠点名を店舗として表示",
@@ -715,6 +923,7 @@
       description: "基本データから、生徒登録・受講登録・会員種類登録の3テンプレートを同時作成します。",
       type: "custom",
       outputType: "excel",
+      mainFileLabel: "バスキャッチ基本データCSVを選択",
       inputHeaders: buscatchInputHeaders,
       options: [
         {
@@ -735,6 +944,43 @@
         "生徒登録：入会日・申込日は元CSVの会員登録日"
       ],
       transformAll: createBuscatchSheets
+    },
+    {
+      id: "account_name_match",
+      name: "口座名義 名寄せ",
+      description: "名簿CSVと口座CSVを照合し、入金方法・口座情報を出力します。",
+      type: "custom",
+      outputType: "csv",
+      mainFileLabel: "名簿CSVを選択",
+      inputHeaders: ["生徒ふりがな_姓", "生徒ふりがな_名"],
+      options: [
+        {
+          key: "accountCsv",
+          label: "口座CSV",
+          type: "file",
+          required: true,
+          help: "口座名義人で照合します。委託者カナ氏名は取引銀行に使用します。",
+          inputHeaders: [
+            "委託者カナ氏名",
+            "委託者番号",
+            "銀行名",
+            "口座番号",
+            "預金種別",
+            "口座名義人"
+          ]
+        }
+      ],
+      rules: [
+        "名簿側は「生徒ふりがな_姓 + 生徒ふりがな_名」で照合します",
+        "口座CSV側は「口座名義人」のみで照合します",
+        "照合時は全角・半角スペースを削除し、半角カナは全角カナに寄せます",
+        "口座番号が数字のみの場合は銀行",
+        "口座番号が 12200-08871351 のような形式の場合はゆうちょ",
+        "ゆうちょはハイフン前5桁を記号1、後ろ8桁を口座番号にします",
+        "取引銀行には委託者カナ氏名を使用し、ｱﾌﾟﾗｽ・ｶ)ｱﾌﾟﾗｽ はアプラスに変換します",
+        "未一致・複数一致・口座番号不明は現金にします"
+      ],
+      transformAll: createAccountMatchSheets
     }
   ];
 })();
