@@ -23,7 +23,7 @@
       </section>
 
       <section class="panel">
-        <h2>2. ファイル</h2>
+        <h2>2. メインファイル</h2>
 
         <label class="field-label" for="encodingSelect">文字コード</label>
         <select id="encodingSelect">
@@ -33,7 +33,7 @@
         </select>
 
         <label class="file-drop" for="fileInput">
-          <span class="file-drop-title">CSV / TSVを選択</span>
+          <span class="file-drop-title" id="mainFileLabel">CSV / TSVを選択</span>
           <span id="fileName" class="file-drop-sub">まだ選択されていません</span>
           <input id="fileInput" type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values" />
         </label>
