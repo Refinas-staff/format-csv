@@ -135,6 +135,7 @@
               type="file"
               accept=".csv,.tsv,text/csv,text/tab-separated-values"
               data-option-key="${escapeHtml(option.key)}"
+              ${option.multiple ? "multiple" : ""}
             />
           </label>
           <div class="option-help">${escapeHtml(option.help || "")}</div>
@@ -151,9 +152,24 @@
 
         if (input && nameEl) {
           input.addEventListener("change", () => {
-            nameEl.textContent = input.files && input.files[0]
-              ? input.files[0].name
-              : "まだ選択されていません";
+            const files = Array.from(input.files || []);
+
+            if (!files.length) {
+              nameEl.textContent = "まだ選択されていません";
+              return;
+            }
+
+            if (files.length === 1) {
+              nameEl.textContent = files[0].name;
+              return;
+            }
+
+            nameEl.innerHTML = `
+              <span>選択済み：${files.length}件</span>
+              <span style="display:block;margin-top:6px;line-height:1.6;">
+                ${files.map(file => `・${escapeHtml(file.name)}`).join("<br>")}
+              </span>
+            `;
           });
         }
       }
@@ -169,13 +185,13 @@
       const input = document.querySelector(`[data-option-key="${option.key}"]`);
 
       if (option.type === "file") {
-        const file = input && input.files ? input.files[0] : null;
+        const files = input && input.files ? Array.from(input.files) : [];
 
-        if (option.required && !file) {
+        if (option.required && !files.length) {
           throw new Error(`${option.label}を選択してください。`);
         }
 
-        options[option.key] = file;
+        options[option.key] = option.multiple ? files : (files[0] || null);
         continue;
       }
 
@@ -197,33 +213,53 @@
     for (const option of pattern.options) {
       if (option.type !== "file") continue;
 
-      const file = options[option.key];
+      const selected = options[option.key];
 
-      if (!file) continue;
+      if (!selected) continue;
 
-      const text = await readFileText(file, $("encodingSelect").value);
+      const files = Array.isArray(selected) ? selected : [selected];
 
-      const parsed = option.headerRow
-        ? parseDelimitedTextWithHeaderRow(text, option.headerRow)
-        : parseDelimitedTextAutoHeader(text, option.inputHeaders || []);
+      if (!files.length) continue;
 
-      const headers = parsed.headers.map(normalizeHeader);
+      let mergedHeaders = [];
+      let mergedRows = [];
 
-      const rows = parsed.rows
-        .map(row => rowObject(headers, row))
-        .filter(row => Object.values(row).some(v => String(v).trim() !== ""));
+      for (const file of files) {
+        const text = await readFileText(file, $("encodingSelect").value);
 
-      const requiredHeaders = option.inputHeaders || [];
-      const missing = requiredHeaders.filter(header => !headers.includes(header));
+        const parsed = option.headerRow
+          ? parseDelimitedTextWithHeaderRow(text, option.headerRow)
+          : parseDelimitedTextAutoHeader(text, option.inputHeaders || []);
 
-      if (missing.length) {
-        throw new Error(
-          `${option.label}に必要な列が見つかりません。\n不足: ${missing.join(", ")}\n読み取れた列: ${headers.join(", ")}`
-        );
+        const headers = parsed.headers.map(normalizeHeader);
+
+        const requiredHeaders = option.inputHeaders || [];
+        const missing = requiredHeaders.filter(header => !headers.includes(header));
+
+        if (missing.length) {
+          throw new Error(
+            `${option.label}「${file.name}」に必要な列が見つかりません。\n不足: ${missing.join(", ")}\n読み取れた列: ${headers.join(", ")}`
+          );
+        }
+
+        const rows = parsed.rows
+          .map(row => {
+            const obj = rowObject(headers, row);
+            obj.__sourceFileName = file.name;
+            return obj;
+          })
+          .filter(row => Object.values(row).some(v => String(v).trim() !== ""));
+
+        if (!mergedHeaders.length) {
+          mergedHeaders = headers;
+        }
+
+        mergedRows = mergedRows.concat(rows);
       }
 
-      options[`${option.key}Headers`] = headers;
-      options[`${option.key}Rows`] = rows;
+      options[`${option.key}Headers`] = mergedHeaders;
+      options[`${option.key}Rows`] = mergedRows;
+      options[`${option.key}Files`] = files.map(file => file.name);
     }
   }
 
