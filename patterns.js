@@ -798,7 +798,7 @@
           parts[1] || "",
           accountHolder,
           customerNumber,
-          "",
+          "0",
           transactionBank
         ]);
         return;
