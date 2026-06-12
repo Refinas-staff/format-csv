@@ -57,9 +57,13 @@
   function selectPattern(patternId) {
     state.selectedPatternId = patternId;
 
+    const pattern = getPattern();
+
     document.querySelectorAll(".pattern-card").forEach(card => {
       card.classList.toggle("active", card.dataset.patternId === patternId);
     });
+
+    $("mainFileLabel").textContent = pattern && pattern.mainFileLabel ? pattern.mainFileLabel : "CSV / TSVを選択";
 
     renderPatternInfo();
     renderPatternOptions();
@@ -85,7 +89,7 @@
 
     $("patternInfo").innerHTML = `
       <strong>${escapeHtml(pattern.name)}</strong>
-      <div style="margin-top:10px;">元CSVの想定項目</div>
+      <div style="margin-top:10px;">メインCSVの想定項目</div>
       <ul>${inputItems}</ul>
       <div style="margin-top:10px;">主なルール</div>
       <ul>${ruleItems || "<li>なし</li>"}</ul>
@@ -118,8 +122,38 @@
         `;
       }
 
+      if (option.type === "file") {
+        return `
+          <label class="field-label" for="option_${escapeHtml(option.key)}">${escapeHtml(option.label)}</label>
+          <label class="file-drop" for="option_${escapeHtml(option.key)}">
+            <span class="file-drop-title">${escapeHtml(option.label)}を選択</span>
+            <span class="file-drop-sub" id="option_${escapeHtml(option.key)}_name">まだ選択されていません</span>
+            <input
+              id="option_${escapeHtml(option.key)}"
+              type="file"
+              accept=".csv,.tsv,text/csv,text/tab-separated-values"
+              data-option-key="${escapeHtml(option.key)}"
+            />
+          </label>
+          <div class="option-help">${escapeHtml(option.help || "")}</div>
+        `;
+      }
+
       return "";
     }).join("");
+
+    pattern.options.forEach(option => {
+      if (option.type === "file") {
+        const input = document.querySelector(`[data-option-key="${option.key}"]`);
+        const nameEl = $(`option_${option.key}_name`);
+
+        if (input && nameEl) {
+          input.addEventListener("change", () => {
+            nameEl.textContent = input.files && input.files[0] ? input.files[0].name : "まだ選択されていません";
+          });
+        }
+      }
+    });
   }
 
   function collectPatternOptions(pattern) {
@@ -129,6 +163,18 @@
 
     for (const option of pattern.options) {
       const input = document.querySelector(`[data-option-key="${option.key}"]`);
+
+      if (option.type === "file") {
+        const file = input && input.files ? input.files[0] : null;
+
+        if (option.required && !file) {
+          throw new Error(`${option.label}を選択してください。`);
+        }
+
+        options[option.key] = file;
+        continue;
+      }
+
       const value = input ? input.value : "";
 
       if (option.required && !value) {
@@ -141,6 +187,38 @@
     return options;
   }
 
+  async function loadOptionFiles(pattern, options) {
+    if (!pattern || !pattern.options) return;
+
+    for (const option of pattern.options) {
+      if (option.type !== "file") continue;
+
+      const file = options[option.key];
+
+      if (!file) continue;
+
+      const text = await readFileText(file, $("encodingSelect").value);
+      const parsed = parseDelimitedText(text);
+
+      const headers = parsed.headers.map(normalizeHeader);
+      const rows = parsed.rows
+        .map(row => rowObject(headers, row))
+        .filter(row => Object.values(row).some(v => String(v).trim() !== ""));
+
+      const requiredHeaders = option.inputHeaders || [];
+      const missing = requiredHeaders.filter(header => !headers.includes(header));
+
+      if (missing.length) {
+        throw new Error(
+          `${option.label}に必要な列が見つかりません。\n不足: ${missing.join(", ")}\n読み取れた列: ${headers.join(", ")}`
+        );
+      }
+
+      options[`${option.key}Headers`] = headers;
+      options[`${option.key}Rows`] = rows;
+    }
+  }
+
   async function convert() {
     const pattern = getPattern();
 
@@ -149,13 +227,15 @@
     }
 
     if (!state.file) {
-      return setStatus("CSVファイルを選択してください。", "error");
+      return setStatus("メインCSVファイルを選択してください。", "error");
     }
 
     try {
       setStatus("CSVを読み込んでいます…", "");
 
       const options = collectPatternOptions(pattern);
+      await loadOptionFiles(pattern, options);
+
       const text = await readFileText(state.file, $("encodingSelect").value);
       const parsed = parseDelimitedText(text);
 
@@ -168,7 +248,7 @@
 
       if (missing.length) {
         return setStatus(
-          `必要な列が見つかりません。\n不足: ${missing.join(", ")}\n読み取れた列: ${headers.join(", ")}`,
+          `メインCSVに必要な列が見つかりません。\n不足: ${missing.join(", ")}\n読み取れた列: ${headers.join(", ")}`,
           "error"
         );
       }
@@ -217,11 +297,11 @@
       updateDownloadButtons();
 
       const warningText = state.result.warnings && state.result.warnings.length
-        ? `\n注意: ${state.result.warnings.join(" / ")}`
+        ? `\n${state.result.warnings.join("\n")}`
         : "";
 
       setStatus(
-        `整形が完了しました。\n読み込み件数: ${rows.length}件\n出力シート数: ${state.result.sheets.length}${warningText}`,
+        `整形が完了しました。\nメインCSV読み込み件数: ${rows.length}件\n出力シート数: ${state.result.sheets.length}${warningText}`,
         "success"
       );
     } catch (error) {
@@ -572,6 +652,18 @@
 
     $("fileInput").value = "";
     $("fileName").textContent = "まだ選択されていません";
+
+    const pattern = getPattern();
+
+    if (pattern && pattern.options) {
+      pattern.options.forEach(option => {
+        const input = document.querySelector(`[data-option-key="${option.key}"]`);
+        if (input) input.value = "";
+
+        const nameEl = $(`option_${option.key}_name`);
+        if (nameEl) nameEl.textContent = "まだ選択されていません";
+      });
+    }
 
     setStatus("整形パターンとファイルを選択してください。", "");
     renderEmptyPreview();
