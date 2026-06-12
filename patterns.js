@@ -756,9 +756,10 @@
       const accountNumber = cleanAccountNumber(account["口座番号"]);
       const paymentType = getPaymentType(accountNumber);
       const bankName = account["銀行名"] || "";
+      const branchName = account["支店名"] || account["支店コード"] || "";
       const depositType = account["預金種別"] || "";
       const accountHolder = account["口座名義人"] || "";
-      const customerNumber = account["委託者番号"] || "";
+      const customerNumber = "";
       const transactionBank = normalizeAplusName(account["委託者カナ氏名"]);
 
       if (paymentType === "銀行") {
@@ -767,7 +768,7 @@
           kanaFirst,
           "銀行",
           bankName,
-          "",
+          branchName,
           depositType,
           accountNumber,
           "",
@@ -959,11 +960,9 @@
           label: "口座CSV",
           type: "file",
           required: true,
-          headerRow: 2,
           help: "口座名義人で照合します。委託者カナ氏名は取引銀行に使用します。",
           inputHeaders: [
             "委託者カナ氏名",
-            "委託者番号",
             "銀行名",
             "口座番号",
             "預金種別",
@@ -978,6 +977,8 @@
         "口座番号が数字のみの場合は銀行",
         "口座番号が 12200-08871351 のような形式の場合はゆうちょ",
         "ゆうちょはハイフン前5桁を記号1、後ろ8桁を口座番号にします",
+        "銀行支店名には、支店名があれば支店名、なければ支店コードを入れます",
+        "顧客番号は空欄にします",
         "取引銀行には委託者カナ氏名を使用し、ｱﾌﾟﾗｽ・ｶ)ｱﾌﾟﾗｽ はアプラスに変換します",
         "未一致・複数一致・口座番号不明は現金にします"
       ],
