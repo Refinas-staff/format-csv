@@ -63,7 +63,9 @@
       card.classList.toggle("active", card.dataset.patternId === patternId);
     });
 
-    $("mainFileLabel").textContent = pattern && pattern.mainFileLabel ? pattern.mainFileLabel : "CSV / TSVを選択";
+    $("mainFileLabel").textContent = pattern && pattern.mainFileLabel
+      ? pattern.mainFileLabel
+      : "CSV / TSVを選択";
 
     renderPatternInfo();
     renderPatternOptions();
@@ -149,7 +151,9 @@
 
         if (input && nameEl) {
           input.addEventListener("change", () => {
-            nameEl.textContent = input.files && input.files[0] ? input.files[0].name : "まだ選択されていません";
+            nameEl.textContent = input.files && input.files[0]
+              ? input.files[0].name
+              : "まだ選択されていません";
           });
         }
       }
@@ -198,9 +202,13 @@
       if (!file) continue;
 
       const text = await readFileText(file, $("encodingSelect").value);
-      const parsed = parseDelimitedText(text);
+
+      const parsed = option.headerRow
+        ? parseDelimitedTextWithHeaderRow(text, option.headerRow)
+        : parseDelimitedText(text);
 
       const headers = parsed.headers.map(normalizeHeader);
+
       const rows = parsed.rows
         .map(row => rowObject(headers, row))
         .filter(row => Object.values(row).some(v => String(v).trim() !== ""));
@@ -240,6 +248,7 @@
       const parsed = parseDelimitedText(text);
 
       const headers = parsed.headers.map(normalizeHeader);
+
       const rows = parsed.rows
         .map(row => rowObject(headers, row))
         .filter(row => Object.values(row).some(v => String(v).trim() !== ""));
@@ -335,7 +344,10 @@
   function parseDelimitedText(text) {
     const cleanText = text.replace(/^\uFEFF/, "");
     const delimiter = detectDelimiter(cleanText);
-    const rows = parseCsvLike(cleanText, delimiter).filter(row => row.some(cell => String(cell).trim() !== ""));
+
+    const rows = parseCsvLike(cleanText, delimiter).filter(row =>
+      row.some(cell => String(cell).trim() !== "")
+    );
 
     if (!rows.length) {
       throw new Error("CSVが空です。");
@@ -344,6 +356,31 @@
     return {
       headers: rows[0],
       rows: rows.slice(1),
+      delimiter
+    };
+  }
+
+  function parseDelimitedTextWithHeaderRow(text, headerRow) {
+    const cleanText = text.replace(/^\uFEFF/, "");
+    const delimiter = detectDelimiter(cleanText);
+
+    const allRows = parseCsvLike(cleanText, delimiter).filter(row =>
+      row.some(cell => String(cell).trim() !== "")
+    );
+
+    if (!allRows.length) {
+      throw new Error("CSVが空です。");
+    }
+
+    const headerIndex = Math.max(Number(headerRow || 1) - 1, 0);
+
+    if (!allRows[headerIndex]) {
+      throw new Error(`${headerRow}行目をヘッダーとして読み込めませんでした。`);
+    }
+
+    return {
+      headers: allRows[headerIndex],
+      rows: allRows.slice(headerIndex + 1),
       delimiter
     };
   }
@@ -658,10 +695,16 @@
     if (pattern && pattern.options) {
       pattern.options.forEach(option => {
         const input = document.querySelector(`[data-option-key="${option.key}"]`);
-        if (input) input.value = "";
+
+        if (input) {
+          input.value = "";
+        }
 
         const nameEl = $(`option_${option.key}_name`);
-        if (nameEl) nameEl.textContent = "まだ選択されていません";
+
+        if (nameEl) {
+          nameEl.textContent = "まだ選択されていません";
+        }
       });
     }
 
