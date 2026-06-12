@@ -959,6 +959,7 @@
           label: "口座CSV",
           type: "file",
           required: true,
+          headerRow: 3,
           help: "口座名義人で照合します。委託者カナ氏名は取引銀行に使用します。",
           inputHeaders: [
             "委託者カナ氏名",
