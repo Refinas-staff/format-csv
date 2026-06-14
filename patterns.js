@@ -820,7 +820,7 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
       const account = matches[0];
       const accountNumber = cleanAccountNumber(account["口座番号"]);
       const paymentType = getPaymentType(accountNumber);
-      const bankName = account["銀行名"] || "";
+      const bankName = account["銀行コード"] || "";
       const branchName = account["支店名"] || account["支店コード"] || "";
       const depositType = account["預金種別"] || "";
       const accountHolder = account["口座名義人"] || "";
@@ -1062,6 +1062,7 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
           help: "複数選択できます。口座CSVの中から列名行を自動検出します。口座名義人で照合します。",
           inputHeaders: [
             "委託者カナ氏名",
+            "銀行コード",
             "銀行名",
             "口座番号",
             "預金種別",
