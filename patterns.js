@@ -722,7 +722,7 @@
     "備考"
   ];
 
-  function normalizeAplusName(value) {
+  function normalizeTransactionBankName(value) {
     const normalized = String(value || "")
       .normalize("NFKC")
       .replace(/[\s　]/g, "")
@@ -730,6 +730,10 @@
 
     if (normalized.includes("アプラス")) {
       return "アプラス";
+    }
+
+    if (normalized === "ジヤツクス") {
+      return "ジャックス";
     }
 
     return normalized;
@@ -801,7 +805,7 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
       cleanAccountNumber(row["口座番号"]),
       row["預金種別"] || "",
       row["口座名義人"] || "",
-      normalizeAplusName(row["委託者カナ氏名"]),
+      normalizeTransactionBankName(row["委託者カナ氏名"]),
       statusInfo.note || ""
     ]);
   });
@@ -809,17 +813,83 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
   return rows;
 }
 
+  function normalizeTemplateHeader(value) {
+    return String(value || "")
+      .replace(/\r?\n/g, "")
+      .trim();
+  }
+
+  function makeCompletedStudentRow(sourceRow, accountValues) {
+    const accountValueMap = new Map();
+
+    accountMatchOutputHeaders.forEach((header, index) => {
+      accountValueMap.set(normalizeTemplateHeader(header), accountValues[index] ?? "");
+    });
+
+    return studentTemplateHeaders.map(header => {
+      const key = normalizeTemplateHeader(header);
+
+      if (accountValueMap.has(key)) {
+        return accountValueMap.get(key);
+      }
+
+      return sourceRow[key] ?? sourceRow[header] ?? "";
+    });
+  }
+
   function createAccountMatchSheets(rosterRows, options) {
     const accountRows = options.accountCsvRows || [];
     const accountIndex = createAccountIndex(accountRows);
     const accountStatusMap = new Map();
+    const usedAccountRowIds = new Set();
 
     const outputRows = [accountMatchOutputHeaders];
+    const completedStudentRows = [studentTemplateHeaders];
 
     let matchedCount = 0;
     let unmatchedCount = 0;
     let duplicateCount = 0;
+    let preventedReuseCount = 0;
     let unknownAccountNumberCount = 0;
+
+    function appendOutput(sourceRow, values) {
+      outputRows.push(values);
+      completedStudentRows.push(makeCompletedStudentRow(sourceRow, values));
+    }
+
+    function makeCashValues(kanaLast, kanaFirst) {
+      return [
+        kanaLast,
+        kanaFirst,
+        "現金",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ];
+    }
+
+    function addReusePreventionNote(accountRowId) {
+      const current = accountStatusMap.get(accountRowId);
+      if (!current) return;
+
+      const extraNote = "同じ口座データは1回だけ使用し、2人目以降には反映していません。";
+      const currentNote = current.note || "";
+
+      accountStatusMap.set(accountRowId, {
+        ...current,
+        note: currentNote.includes(extraNote)
+          ? currentNote
+          : `${currentNote}${currentNote ? " " : ""}${extraNote}`
+      });
+    }
 
     rosterRows.forEach(row => {
       const kanaLast = row["生徒ふりがな_姓"] || "";
@@ -843,26 +913,24 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
 
         if (matches.length === 0) unmatchedCount += 1;
 
-        outputRows.push([
-          kanaLast,
-          kanaFirst,
-          "現金",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          ""
-        ]);
+        appendOutput(row, makeCashValues(kanaLast, kanaFirst));
         return;
       }
 
       const account = matches[0];
+      const accountRowId = account.__accountRowId;
+
+      if (usedAccountRowIds.has(accountRowId)) {
+        preventedReuseCount += 1;
+        addReusePreventionNote(accountRowId);
+        appendOutput(row, makeCashValues(kanaLast, kanaFirst));
+        return;
+      }
+
+      // 同じ口座CSV行は、この時点で最初に一致した生徒へ予約する。
+      // 口座番号が不明な場合も、別の生徒へ再利用しない。
+      usedAccountRowIds.add(accountRowId);
+
       const accountNumber = cleanAccountNumber(account["口座番号"]);
       const paymentType = getPaymentType(accountNumber);
       const bankName = account["銀行コード"] || "";
@@ -870,18 +938,18 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
       const depositType = account["預金種別"] || "";
       const accountHolder = account["口座名義人"] || "";
       const customerNumber = "";
-      const transactionBank = normalizeAplusName(account["委託者カナ氏名"]);
+      const transactionBank = normalizeTransactionBankName(account["委託者カナ氏名"]);
 
       if (paymentType === "銀行") {
         matchedCount += 1;
 
-        accountStatusMap.set(account.__accountRowId, {
+        accountStatusMap.set(accountRowId, {
           status: "反映済み",
           rosterKana,
           note: "銀行口座として名簿に反映しました。"
         });
 
-        outputRows.push([
+        appendOutput(row, [
           kanaLast,
           kanaFirst,
           "銀行",
@@ -905,13 +973,13 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
 
         const parts = accountNumber.split("-");
 
-        accountStatusMap.set(account.__accountRowId, {
+        accountStatusMap.set(accountRowId, {
           status: "反映済み",
           rosterKana,
           note: "ゆうちょ口座として名簿に反映しました。"
         });
 
-        outputRows.push([
+        appendOutput(row, [
           kanaLast,
           kanaFirst,
           "ゆうちょ",
@@ -932,28 +1000,13 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
 
       unknownAccountNumberCount += 1;
 
-      accountStatusMap.set(account.__accountRowId, {
+      accountStatusMap.set(accountRowId, {
         status: "口座番号不明",
         rosterKana,
         note: "名義は一致しましたが、口座番号から銀行/ゆうちょを判定できなかったため、現金にしています。"
       });
 
-      outputRows.push([
-        kanaLast,
-        kanaFirst,
-        "現金",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        ""
-      ]);
+      appendOutput(row, makeCashValues(kanaLast, kanaFirst));
     });
 
     const accountCheckRows = createAccountCheckRows(accountRows, accountStatusMap);
@@ -962,12 +1015,18 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
       `一致: ${matchedCount}件`,
       `未一致: ${unmatchedCount}件`,
       `複数一致: ${duplicateCount}件`,
+      `重複使用防止: ${preventedReuseCount}件`,
       `口座番号不明: ${unknownAccountNumberCount}件`,
       `口座CSV読込件数: ${accountRows.length}件`
     ];
 
     return {
       sheets: [
+        {
+          name: "生徒登録テンプレート",
+          rows: completedStudentRows,
+          styleMatrix: makeDefaultStyleMatrix(completedStudentRows)
+        },
         {
           name: "口座名義名寄せ",
           rows: outputRows,
@@ -1094,10 +1153,10 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
     {
       id: "account_name_match",
       name: "口座名義 名寄せ",
-      description: "名簿CSVと複数の口座CSVを照合し、入金方法・口座情報・反映確認用シートを出力します。",
+      description: "生徒登録テンプレートと複数の口座CSVを照合し、口座情報を反映したテンプレートと確認用シートを出力します。",
       type: "custom",
       outputType: "excel",
-      mainFileLabel: "バスキャッチ登録-基本データ",
+      mainFileLabel: "生徒登録テンプレートを選択",
       inputHeaders: ["生徒ふりがな_姓", "生徒ふりがな_名"],
       options: [
         {
@@ -1120,7 +1179,9 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
       rules: [
         "口座CSVは複数ファイルを選択できます",
         "選択した複数の口座CSVをまとめて照合します",
-        "Excelで2シート出力します：口座名義名寄せ、口座CSV確認用",
+        "Excelで3シート出力します：生徒登録テンプレート、口座名義名寄せ、口座CSV確認用",
+        "入力した生徒登録テンプレートの口座関連列へ、名寄せ結果を反映して出力します",
+        "同じ口座CSV行は最初に一致した1名だけに反映し、2人目以降は現金にします",
         "口座CSV確認用には、元ファイル名・反映結果・備考を出力します",
         "反映結果は、反映済み・未使用・複数一致・口座番号不明です",
         "名簿側は「生徒ふりがな_姓 + 生徒ふりがな_名」で照合します",
@@ -1132,7 +1193,7 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
         "ゆうちょの場合、新規コードは0にします",
         "銀行支店名には、支店名があれば支店名、なければ支店コードを入れます",
         "顧客番号は空欄にします",
-        "取引銀行には委託者カナ氏名を使用し、ｱﾌﾟﾗｽ・ｶ)ｱﾌﾟﾗｽ はアプラスに変換します",
+        "取引銀行には委託者カナ氏名を使用し、ｱﾌﾟﾗｽ・ｶ)ｱﾌﾟﾗｽ はアプラス、ジヤツクスはジャックスに変換します",
         "未一致・複数一致・口座番号不明は現金にします"
       ],
       transformAll: createAccountMatchSheets
