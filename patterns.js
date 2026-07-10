@@ -665,11 +665,13 @@
       workbooks: [
         {
           fileBaseName: "バスキャッチ登録_難波システム",
+          downloadButtonLabel: "難波システムをダウンロード",
           previewLabel: "対象3店舗",
           sheets: makeBuscatchWorkbookSheets(separateStoreRows, startDate, billingStartDate)
         },
         {
           fileBaseName: "バスキャッチ登録_梅田システム",
+          downloadButtonLabel: "梅田システムをダウンロード",
           previewLabel: "その他店舗",
           sheets: makeBuscatchWorkbookSheets(otherStoreRows, startDate, billingStartDate)
         }
@@ -1061,7 +1063,7 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
       description: "基本データを対象3店舗とその他店舗に分け、各Excelに3テンプレートを作成します。",
       type: "custom",
       outputType: "excel",
-      mainFileLabel: "バスキャッチ基本データCSVを選択",
+      mainFileLabel: "アプリから出力したデータを選択",
       inputHeaders: buscatchInputHeaders,
       options: [
         {
@@ -1091,7 +1093,7 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
       description: "名簿CSVと複数の口座CSVを照合し、入金方法・口座情報・反映確認用シートを出力します。",
       type: "custom",
       outputType: "excel",
-      mainFileLabel: "名簿CSVを選択",
+      mainFileLabel: "バスキャッチ登録-基本データ",
       inputHeaders: ["生徒ふりがな_姓", "生徒ふりがな_名"],
       options: [
         {

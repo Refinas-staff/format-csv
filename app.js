@@ -665,12 +665,38 @@
     const workbookCount = state.result && state.result.workbooks
       ? state.result.workbooks.length
       : 0;
+    const hasMultipleWorkbooks = workbookCount > 1;
 
     $("downloadCsvButton").disabled = !hasResult;
-    $("downloadExcelButton").disabled = !hasResult;
-    $("downloadExcelButton").textContent = workbookCount > 1
-      ? `Excel ${workbookCount}ファイルをダウンロード`
-      : "Excelをダウンロード";
+    $("downloadExcelButton").disabled = !hasResult || hasMultipleWorkbooks;
+    $("downloadExcelButton").hidden = hasMultipleWorkbooks;
+    $("downloadExcelButton").textContent = "Excelをダウンロード";
+
+    renderWorkbookDownloadButtons(hasResult);
+  }
+
+  function renderWorkbookDownloadButtons(hasResult) {
+    const container = $("workbookDownloadButtons");
+    if (!container) return;
+
+    container.innerHTML = "";
+
+    const workbookDefinitions = state.result && state.result.workbooks
+      ? state.result.workbooks
+      : [];
+
+    if (workbookDefinitions.length <= 1) return;
+
+    workbookDefinitions.forEach((workbookDefinition, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "button excel";
+      button.disabled = !hasResult;
+      button.textContent = workbookDefinition.downloadButtonLabel
+        || `${workbookDefinition.fileBaseName || `Excel ${index + 1}`}をダウンロード`;
+      button.addEventListener("click", () => downloadWorkbook(index));
+      container.appendChild(button);
+    });
   }
 
   function downloadCsv() {
@@ -697,6 +723,25 @@
   function downloadExcel() {
     if (!state.result || !state.result.sheets.length) return;
 
+    const workbookDefinitions = state.result.workbooks && state.result.workbooks.length
+      ? state.result.workbooks
+      : [
+          {
+            fileBaseName: state.result.fileBaseName || "converted",
+            sheets: state.result.sheets
+          }
+        ];
+
+    if (workbookDefinitions.length > 1) {
+      return setStatus("難波システムと梅田システムのボタンから、それぞれダウンロードしてください。", "success");
+    }
+
+    downloadWorkbook(0);
+  }
+
+  function downloadWorkbook(workbookIndex) {
+    if (!state.result || !state.result.sheets.length) return;
+
     if (!window.XLSX) {
       return setStatus("Excel出力ライブラリを読み込めませんでした。インターネット接続またはCDNの読み込みを確認してください。", "error");
     }
@@ -710,29 +755,36 @@
           }
         ];
 
-    const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const workbookDefinition = workbookDefinitions[workbookIndex];
+    if (!workbookDefinition) return;
 
-    workbookDefinitions.forEach((workbookDefinition, index) => {
-      const workbook = XLSX.utils.book_new();
+    const workbook = XLSX.utils.book_new();
 
-      (workbookDefinition.sheets || []).forEach(sheet => {
-        const ws = XLSX.utils.aoa_to_sheet(sheet.rows);
+    (workbookDefinition.sheets || []).forEach(sheet => {
+      const ws = XLSX.utils.aoa_to_sheet(sheet.rows);
 
-        applyWorksheetStyles(ws, sheet);
-        ws["!cols"] = autoColumns(sheet.rows);
+      applyWorksheetStyles(ws, sheet);
+      ws["!cols"] = autoColumns(sheet.rows);
 
-        XLSX.utils.book_append_sheet(workbook, ws, safeSheetName(sheet.name));
-      });
-
-      const fallbackName = workbookDefinitions.length > 1
-        ? `${state.result.fileBaseName || "converted"}_${index + 1}`
-        : (state.result.fileBaseName || "converted");
-
-      const outputFileName = workbookDefinition.fileName
-        || `${workbookDefinition.fileBaseName || fallbackName}_${dateStamp}.xlsx`;
-
-      XLSX.writeFile(workbook, outputFileName);
+      XLSX.utils.book_append_sheet(workbook, ws, safeSheetName(sheet.name));
     });
+
+    const fallbackName = workbookDefinitions.length > 1
+      ? `${state.result.fileBaseName || "converted"}_${workbookIndex + 1}`
+      : (state.result.fileBaseName || "converted");
+    const dateStamp = getLocalDateStamp();
+    const outputFileName = workbookDefinition.fileName
+      || `${workbookDefinition.fileBaseName || fallbackName}_${dateStamp}.xlsx`;
+
+    XLSX.writeFile(workbook, outputFileName);
+  }
+
+  function getLocalDateStamp() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}${month}${day}`;
   }
 
   function applyWorksheetStyles(ws, sheet) {
