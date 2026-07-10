@@ -319,11 +319,23 @@
         };
       } else if (pattern.type === "custom") {
         const customResult = pattern.transformAll(rows, options);
+        const workbooks = customResult.workbooks || [];
+
+        const previewSheets = workbooks.length
+          ? workbooks.flatMap((workbook, workbookIndex) =>
+              (workbook.sheets || []).map(sheet => ({
+                ...sheet,
+                previewName: `${workbook.previewLabel || workbook.fileBaseName || `Excel ${workbookIndex + 1}`}｜${sheet.name}`,
+                workbookFileBaseName: workbook.fileBaseName || pattern.id
+              }))
+            )
+          : (customResult.sheets || []);
 
         state.result = {
           type: "workbook",
           fileBaseName: pattern.id,
-          sheets: customResult.sheets || [],
+          sheets: previewSheets,
+          workbooks,
           warnings: customResult.warnings || []
         };
       }
@@ -345,8 +357,12 @@
         ? `\n${state.result.warnings.join("\n")}`
         : "";
 
+      const workbookText = state.result.workbooks && state.result.workbooks.length
+        ? `\n出力Excel数: ${state.result.workbooks.length}`
+        : "";
+
       setStatus(
-        `整形が完了しました。\nメインCSV読み込み件数: ${rows.length}件\n出力シート数: ${state.result.sheets.length}${warningText}`,
+        `整形が完了しました。\nメインCSV読み込み件数: ${rows.length}件${workbookText}\nプレビューシート数: ${state.result.sheets.length}${warningText}`,
         "success"
       );
     } catch (error) {
@@ -554,7 +570,7 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = `sheet-tab${index === state.activeSheetIndex ? " active" : ""}`;
-      button.textContent = sheet.name;
+      button.textContent = sheet.previewName || sheet.name;
 
       button.addEventListener("click", () => {
         state.activeSheetIndex = index;
@@ -609,7 +625,7 @@
 
     area.appendChild(table);
 
-    $("previewTitle").textContent = sheet.name || "プレビュー";
+    $("previewTitle").textContent = sheet.previewName || sheet.name || "プレビュー";
     $("previewBadge").textContent = `${sheet.rows.length}行`;
     $("previewNote").textContent = sheet.rows.length > maxRows
       ? `先頭${maxRows}行を表示しています。編集内容は出力に反映されます。`
@@ -646,9 +662,15 @@
 
   function updateDownloadButtons() {
     const hasResult = !!(state.result && state.result.sheets.length);
+    const workbookCount = state.result && state.result.workbooks
+      ? state.result.workbooks.length
+      : 0;
 
     $("downloadCsvButton").disabled = !hasResult;
     $("downloadExcelButton").disabled = !hasResult;
+    $("downloadExcelButton").textContent = workbookCount > 1
+      ? `Excel ${workbookCount}ファイルをダウンロード`
+      : "Excelをダウンロード";
   }
 
   function downloadCsv() {
@@ -658,7 +680,8 @@
 
     const csv = sheet.rows.map(row => row.map(escapeCsvCell).join(",")).join("\r\n");
 
-    downloadBlob(`\uFEFF${csv}`, `${state.result.fileBaseName || "converted"}.csv`, "text/csv;charset=utf-8");
+    const csvBaseName = sheet.workbookFileBaseName || state.result.fileBaseName || "converted";
+    downloadBlob(`\uFEFF${csv}`, `${csvBaseName}_${safeSheetName(sheet.name)}.csv`, "text/csv;charset=utf-8");
   }
 
   function escapeCsvCell(value) {
@@ -678,21 +701,38 @@
       return setStatus("Excel出力ライブラリを読み込めませんでした。インターネット接続またはCDNの読み込みを確認してください。", "error");
     }
 
-    const workbook = XLSX.utils.book_new();
-
-    state.result.sheets.forEach(sheet => {
-      const ws = XLSX.utils.aoa_to_sheet(sheet.rows);
-
-      applyWorksheetStyles(ws, sheet);
-
-      ws["!cols"] = autoColumns(sheet.rows);
-
-      XLSX.utils.book_append_sheet(workbook, ws, safeSheetName(sheet.name));
-    });
+    const workbookDefinitions = state.result.workbooks && state.result.workbooks.length
+      ? state.result.workbooks
+      : [
+          {
+            fileBaseName: state.result.fileBaseName || "converted",
+            sheets: state.result.sheets
+          }
+        ];
 
     const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
 
-    XLSX.writeFile(workbook, `${state.result.fileBaseName || "converted"}_${dateStamp}.xlsx`);
+    workbookDefinitions.forEach((workbookDefinition, index) => {
+      const workbook = XLSX.utils.book_new();
+
+      (workbookDefinition.sheets || []).forEach(sheet => {
+        const ws = XLSX.utils.aoa_to_sheet(sheet.rows);
+
+        applyWorksheetStyles(ws, sheet);
+        ws["!cols"] = autoColumns(sheet.rows);
+
+        XLSX.utils.book_append_sheet(workbook, ws, safeSheetName(sheet.name));
+      });
+
+      const fallbackName = workbookDefinitions.length > 1
+        ? `${state.result.fileBaseName || "converted"}_${index + 1}`
+        : (state.result.fileBaseName || "converted");
+
+      const outputFileName = workbookDefinition.fileName
+        || `${workbookDefinition.fileBaseName || fallbackName}_${dateStamp}.xlsx`;
+
+      XLSX.writeFile(workbook, outputFileName);
+    });
   }
 
   function applyWorksheetStyles(ws, sheet) {

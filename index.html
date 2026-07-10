@@ -41,8 +41,6 @@
 
         <div class="button-grid">
           <button id="convertButton" class="button primary">整形する</button>
-          <button id="downloadCsvButton" class="button secondary" disabled>CSVをダウンロード</button>
-          <button id="downloadExcelButton" class="button excel" disabled>Excelをダウンロード</button>
           <button id="resetButton" class="button ghost">リセット</button>
         </div>
 
@@ -57,7 +55,15 @@
       </section>
 
       <section class="panel">
-        <h2>4. 選択中の条件</h2>
+        <h2>4. ファイルをダウンロード</h2>
+        <div class="button-grid">
+          <button id="downloadCsvButton" class="button secondary" disabled>CSVをダウンロード</button>
+          <button id="downloadExcelButton" class="button excel" disabled>Excelをダウンロード</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>5. 選択中の条件</h2>
         <div id="patternInfo" class="pattern-info"></div>
       </section>
     </aside>

@@ -398,6 +398,18 @@
     "コース"
   ];
 
+  const BUSCATCH_SEPARATE_STORES = new Set([
+    "リフィナス大阪なんば本店",
+    "リフィナス大阪心斎橋",
+    "リフィナス神戸三宮"
+  ]);
+
+  function addNewCoursePrefix(value) {
+    const course = String(value || "").trim();
+    if (!course) return "";
+    return course.startsWith("（新規）") ? course : `（新規）${course}`;
+  }
+
   const studentTemplateHeaders = [
     "*生徒名前_姓",
     "生徒名前_名",
@@ -554,13 +566,14 @@
 
     rows.forEach(row => {
       const name = splitName(row["名前"]);
+      const course = addNewCoursePrefix(row["コース"]);
 
       outputRows.push([
         name.lastName,
         name.firstName,
         row["登録店舗"] || "",
         "キックボクシングスタジオ",
-        row["コース"] || "",
+        course,
         "無",
         "",
         "",
@@ -585,7 +598,7 @@
 
     rows.forEach(row => {
       const name = splitName(row["名前"]);
-      const course = row["コース"] || "";
+      const course = addNewCoursePrefix(row["コース"]);
 
       outputRows.push([
         name.lastName,
@@ -611,34 +624,60 @@
     return outputRows;
   }
 
-  function createBuscatchSheets(inputRows, options) {
-    const sortedRows = sortByStoreAndRegisteredDate(inputRows);
-    const startDate = monthToFirstDate(options.enrollmentMonth);
-    const billingStartDate = monthToFirstDateAfterMonths(options.enrollmentMonth, 2);
-
+  function makeBuscatchWorkbookSheets(rows, startDate, billingStartDate) {
+    const sortedRows = sortByStoreAndRegisteredDate(rows);
     const studentRows = makeBuscatchStudentRows(sortedRows);
     const lessonRows = makeBuscatchLessonRows(sortedRows, startDate);
     const membershipRows = makeBuscatchMembershipRows(sortedRows, startDate, billingStartDate);
 
+    return [
+      {
+        name: "生徒登録テンプレート",
+        rows: studentRows,
+        styleMatrix: makeDefaultStyleMatrix(studentRows)
+      },
+      {
+        name: "受講登録テンプレート",
+        rows: lessonRows,
+        styleMatrix: makeDefaultStyleMatrix(lessonRows)
+      },
+      {
+        name: "会員種類登録テンプレート",
+        rows: membershipRows,
+        styleMatrix: makeDefaultStyleMatrix(membershipRows)
+      }
+    ];
+  }
+
+  function createBuscatchSheets(inputRows, options) {
+    const startDate = monthToFirstDate(options.enrollmentMonth);
+    const billingStartDate = monthToFirstDateAfterMonths(options.enrollmentMonth, 2);
+
+    const separateStoreRows = inputRows.filter(row =>
+      BUSCATCH_SEPARATE_STORES.has(String(row["登録店舗"] || "").trim())
+    );
+
+    const otherStoreRows = inputRows.filter(row =>
+      !BUSCATCH_SEPARATE_STORES.has(String(row["登録店舗"] || "").trim())
+    );
+
     return {
-      sheets: [
+      workbooks: [
         {
-          name: "生徒登録テンプレート",
-          rows: studentRows,
-          styleMatrix: makeDefaultStyleMatrix(studentRows)
+          fileBaseName: "バスキャッチ登録_難波システム",
+          previewLabel: "対象3店舗",
+          sheets: makeBuscatchWorkbookSheets(separateStoreRows, startDate, billingStartDate)
         },
         {
-          name: "受講登録テンプレート",
-          rows: lessonRows,
-          styleMatrix: makeDefaultStyleMatrix(lessonRows)
-        },
-        {
-          name: "会員種類登録テンプレート",
-          rows: membershipRows,
-          styleMatrix: makeDefaultStyleMatrix(membershipRows)
+          fileBaseName: "バスキャッチ登録_梅田システム",
+          previewLabel: "その他店舗",
+          sheets: makeBuscatchWorkbookSheets(otherStoreRows, startDate, billingStartDate)
         }
       ],
-      warnings: []
+      warnings: [
+        `対象3店舗: ${separateStoreRows.length}件`,
+        `その他店舗: ${otherStoreRows.length}件`
+      ]
     };
   }
 
@@ -1019,7 +1058,7 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
     {
       id: "buscatch_basic",
       name: "バスキャッチ登録-基本データ",
-      description: "基本データから、生徒登録・受講登録・会員種類登録の3テンプレートを同時作成します。",
+      description: "基本データを対象3店舗とその他店舗に分け、各Excelに3テンプレートを作成します。",
       type: "custom",
       outputType: "excel",
       mainFileLabel: "バスキャッチ基本データCSVを選択",
@@ -1034,11 +1073,13 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
         }
       ],
       rules: [
-        "3シート同時出力：生徒登録テンプレート、受講登録テンプレート、会員種類登録テンプレート",
+        "2つのExcelを同時出力：対象3店舗、その他店舗",
+        "対象3店舗：リフィナス大阪なんば本店、リフィナス大阪心斎橋、リフィナス神戸三宮",
+        "各Excelは3シート構成：生徒登録テンプレート、受講登録テンプレート、会員種類登録テンプレート",
         "登録店舗ごとにまとめ、同じ店舗内では会員登録日順に並べます",
         "全テンプレートの生徒番号には、一旦「登録店舗」を入れます",
-        "受講登録：スクールはキックボクシングスタジオ、級は無",
-        "会員種類登録：コースと会員種類は同じ値",
+        "受講登録：コースの先頭に（新規）を付け、スクールはキックボクシングスタジオ、級は無",
+        "会員種類登録：コースの先頭に（新規）を付け、受講登録のコースと同じ値にします",
         "会員種類登録：請求開始日は入会手続き月の翌々月",
         "生徒登録：入会日・申込日は元CSVの会員登録日"
       ],
