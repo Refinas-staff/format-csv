@@ -243,7 +243,7 @@
         row["電話番号"] || "",
         registeredDate,
         "",
-        "",
+        row["メールアドレス1"] || "",
         "",
         "",
         "",
@@ -279,7 +279,7 @@
 
     rows.forEach(row => {
       const name = splitName(row["名前"]);
-      const course = addNewCoursePrefix(row["コース"]);
+      const course = addNewCoursePrefix(row["コース"]).replace(/（特別）/g, "");
 
       outputRows.push([
         name.lastName,
