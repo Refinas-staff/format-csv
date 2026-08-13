@@ -227,7 +227,7 @@
         kana.lastName,
         kana.firstName,
         row["登録店舗"] || "",
-        row["性別"] || "",
+        row["性別"] === "男性" ? "男" : row["性別"] === "女性" ? "女" : (row["性別"] || ""),
         normalizeDate(row["生年月日"]),
         "",
         "",
