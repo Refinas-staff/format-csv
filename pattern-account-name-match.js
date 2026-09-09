@@ -190,6 +190,28 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
   return rows;
 }
 
+function createAccountCountCheckRows(accountCheckRows) {
+  const dataRows = accountCheckRows.slice(1);
+  const resultIndex = accountCheckHeaders.indexOf("結果");
+  const noteIndex = accountCheckHeaders.indexOf("備考");
+
+  const approvedCount = dataRows.filter(row => String(row[resultIndex] || "").trim() === "○").length;
+  const bankReflectedCount = dataRows.filter(row => String(row[noteIndex] || "").trim() === "銀行口座として名簿に反映しました。").length;
+  const yuchoReflectedCount = dataRows.filter(row => String(row[noteIndex] || "").trim() === "ゆうちょ口座として名簿に反映しました。").length;
+  const reflectedTotal = bankReflectedCount + yuchoReflectedCount;
+  const difference = approvedCount - reflectedTotal;
+
+  return [
+    ["項目", "件数"],
+    ["G列「結果」＝○", approvedCount],
+    ["銀行口座として名簿に反映しました。", bankReflectedCount],
+    ["ゆうちょ口座として名簿に反映しました。", yuchoReflectedCount],
+    ["名簿反映合計", reflectedTotal],
+    ["差分（○ − 反映合計）", difference],
+    ["判定", difference === 0 ? "一致" : "不一致"]
+  ];
+}
+
   function normalizeTemplateHeader(value) {
     return String(value || "")
       .replace(/\r?\n/g, "")
@@ -452,6 +474,7 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
     });
 
     const accountCheckRows = createAccountCheckRows(accountRows, accountStatusMap);
+    const accountCountCheckRows = createAccountCountCheckRows(accountCheckRows);
 
     const warnings = [
       `一致: ${matchedCount}件`,
@@ -478,6 +501,11 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
           name: "口座CSV確認用",
           rows: accountCheckRows,
           styleMatrix: makeDefaultStyleMatrix(accountCheckRows)
+        },
+        {
+          name: "名寄せ件数チェック",
+          rows: accountCountCheckRows,
+          styleMatrix: makeDefaultStyleMatrix(accountCountCheckRows)
         }
       ],
       warnings
@@ -514,7 +542,7 @@ function createAccountCheckRows(accountRows, accountStatusMap) {
     rules: [
       "口座CSVは複数ファイルを選択できます",
       "選択した複数の口座CSVをまとめて照合します",
-      "Excelで3シート出力します：生徒登録テンプレート、口座名義名寄せ、口座CSV確認用",
+      "Excelで4シート出力します：生徒登録テンプレート、口座名義名寄せ、口座CSV確認用、名寄せ件数チェック",
       "入力した生徒登録テンプレートの口座関連列へ、名寄せ結果を反映して出力します",
       "同じ口座CSV行は最初に一致した1名だけに反映し、2人目以降は現金にします",
       "口座CSV確認用には、元ファイル名・反映結果・備考を出力します",

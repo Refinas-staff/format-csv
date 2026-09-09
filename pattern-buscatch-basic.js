@@ -114,7 +114,8 @@
   function addNewCoursePrefix(value) {
     const course = String(value || "").trim();
     if (!course) return "";
-    return course.startsWith("（新規）") ? course : `（新規）${course}`;
+    const normalizedCourse = course.replace(/^（新規）/, "(新規)");
+    return normalizedCourse.startsWith("(新規)") ? normalizedCourse : `(新規)${normalizedCourse}`;
   }
 
   function toMembershipTypeCourse(value) {
@@ -418,8 +419,8 @@
         "各Excelは3シート構成：生徒登録テンプレート、受講登録テンプレート、会員種類登録テンプレート",
         "登録店舗ごとにまとめ、同じ店舗内では会員登録日順に並べます",
         "全テンプレートの生徒番号には、一旦「登録店舗」を入れます",
-        "受講登録：コースの先頭に（新規）を付け、スクールはキックボクシングスタジオ、級は無",
-        "会員種類登録：コースは受講登録と同じ全角の（新規）、会員種類だけ半角の(新規)を付けます",
+        "受講登録：コースの先頭に(新規)を付け、スクールはキックボクシングスタジオ、級は無",
+        "会員種類登録：コース・会員種類ともに半角の(新規)を付けます",
         "会員種類登録：請求開始日は入会手続き月の翌々月",
         "生徒登録：入会日・申込日は元CSVの会員登録日"
       ],
