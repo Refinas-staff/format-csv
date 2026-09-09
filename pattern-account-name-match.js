@@ -198,6 +198,10 @@ function createAccountCountCheckRows(accountCheckRows) {
   const approvedCount = dataRows.filter(row => String(row[resultIndex] || "").trim() === "○").length;
   const bankReflectedCount = dataRows.filter(row => String(row[noteIndex] || "").trim() === "銀行口座として名簿に反映しました。").length;
   const yuchoReflectedCount = dataRows.filter(row => String(row[noteIndex] || "").trim() === "ゆうちょ口座として名簿に反映しました。").length;
+  const approvedButNoRosterMatchCount = dataRows.filter(row =>
+    String(row[resultIndex] || "").trim() === "○" &&
+    String(row[noteIndex] || "").trim() === "名簿側に一致するデータがありません。"
+  ).length;
   const reflectedTotal = bankReflectedCount + yuchoReflectedCount;
   const difference = approvedCount - reflectedTotal;
 
@@ -206,9 +210,9 @@ function createAccountCountCheckRows(accountCheckRows) {
     ["G列「結果」＝○", approvedCount],
     ["銀行口座として名簿に反映しました。", bankReflectedCount],
     ["ゆうちょ口座として名簿に反映しました。", yuchoReflectedCount],
+    ["結果が○にもかかわらず、名簿側に一致するデータがありません。", approvedButNoRosterMatchCount],
     ["名簿反映合計", reflectedTotal],
-    ["差分（○ − 反映合計）", difference],
-    ["判定", difference === 0 ? "一致" : "不一致"]
+    ["差分（○ − 反映合計）", difference]
   ];
 }
 
@@ -397,7 +401,7 @@ function createAccountCountCheckRows(accountCheckRows) {
 
       const accountNumber = cleanAccountNumber(account["口座番号"]);
       const paymentType = getPaymentType(accountNumber);
-      const bankName = account["銀行コード"] || "";
+      const bankName = String(account["銀行コード"] ?? "").replace(/^'/, "");
       const branchName = account["支店名"] || account["支店コード"] || "";
       const depositType = account["預金種別"] || "";
       const accountHolder = account["口座名義人"] || "";
