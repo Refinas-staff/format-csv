@@ -216,6 +216,24 @@ function createAccountCountCheckRows(accountCheckRows) {
   ];
 }
 
+function createPostImportWorkflowRows() {
+  return [
+    ["No.", "作業内容"],
+    [1, "生徒番号を入力する"],
+    [2, "顧客番号に生徒番号と同じ番号をコピペする"],
+    [3, "口座名義が半角になっているかチェックする"],
+    [4, "銀行支店名の列の先頭の'を「検索と置換」で削除する"],
+    [5, "銀行支店名の列の書式を「数字」に変更する"],
+    [6, "バスキャッチの「生徒一覧」の中の「生徒インポート」を開く"],
+    [7, "「2.代表者データとの登録済みチェックを行う方法を選択してください」の項目で、チェックしない(全て新規データとして登録)を確実に選択する。"],
+    [8, "データをインポートする"],
+    [9, "エラーを修正する"],
+    [10, "すべてが「新規登録」になっていることを確実に確認して保存する。"],
+    [11, "受講インポートと会員種類インポートのシートにも会員番号をコピペする"],
+    [12, "受講インポートと会員種類インポートをする。"]
+  ];
+}
+
   function normalizeTemplateHeader(value) {
     return String(value || "")
       .replace(/\r?\n/g, "")
@@ -479,6 +497,7 @@ function createAccountCountCheckRows(accountCheckRows) {
 
     const accountCheckRows = createAccountCheckRows(accountRows, accountStatusMap);
     const accountCountCheckRows = createAccountCountCheckRows(accountCheckRows);
+    const postImportWorkflowRows = createPostImportWorkflowRows();
 
     const warnings = [
       `一致: ${matchedCount}件`,
@@ -510,6 +529,11 @@ function createAccountCountCheckRows(accountCheckRows) {
           name: "名寄せ件数チェック",
           rows: accountCountCheckRows,
           styleMatrix: makeDefaultStyleMatrix(accountCountCheckRows)
+        },
+        {
+          name: "この後の作業フロー",
+          rows: postImportWorkflowRows,
+          styleMatrix: makeDefaultStyleMatrix(postImportWorkflowRows)
         }
       ],
       warnings
@@ -546,7 +570,7 @@ function createAccountCountCheckRows(accountCheckRows) {
     rules: [
       "口座CSVは複数ファイルを選択できます",
       "選択した複数の口座CSVをまとめて照合します",
-      "Excelで4シート出力します：生徒登録テンプレート、口座名義名寄せ、口座CSV確認用、名寄せ件数チェック",
+      "Excelで5シート出力します：生徒登録テンプレート、口座名義名寄せ、口座CSV確認用、名寄せ件数チェック、この後の作業フロー",
       "入力した生徒登録テンプレートの口座関連列へ、名寄せ結果を反映して出力します",
       "同じ口座CSV行は最初に一致した1名だけに反映し、2人目以降は現金にします",
       "口座CSV確認用には、元ファイル名・反映結果・備考を出力します",
