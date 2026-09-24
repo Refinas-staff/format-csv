@@ -158,6 +158,8 @@
   }
 
   function buildComparison(shiftRows, options) {
+    const extraShiftRows = options.shiftExtraRows || [];
+    const allShiftRows = shiftRows.concat(extraShiftRows);
     const attendanceRows = options.attendanceRows || [];
     const shiftMap = new Map();
     const actualMap = new Map();
@@ -166,7 +168,7 @@
     let rejectedShifts = 0;
     let rejectedAttendance = 0;
 
-    shiftRows.forEach(row => {
+    allShiftRows.forEach(row => {
       const date = parseDate(row["日にち"]);
       const rawName = row["表示名"] || `${row["氏名-姓"] || ""} ${row["氏名-名"] || ""}`;
       const nameKey = normalizeName(rawName);
@@ -332,9 +334,18 @@
     description: "シフトCSVと打刻CSVを氏名・日付で照合し、全員一覧と個人別シートを作成します。",
     type: "custom",
     outputType: "excel",
-    mainFileLabel: "シフトCSVを選択",
+    mainFileLabel: "シフトCSV①を選択",
     inputHeaders: ["日にち", "開始時間", "終了時間", "表示名"],
     options: [
+      {
+        key: "shiftExtra",
+        type: "file",
+        label: "シフトCSV②",
+        required: true,
+        multiple: false,
+        inputHeaders: ["日にち", "開始時間", "終了時間", "表示名"],
+        help: "2つ目のシフトCSVを選択してください。シフトCSV①と自動で合算してから打刻実績と照合します。"
+      },
       {
         key: "attendance",
         type: "file",
@@ -346,6 +357,7 @@
       }
     ],
     rules: [
+      "シフトCSV①とシフトCSV②を合算してから照合",
       "氏名は半角・全角スペースを除去して照合",
       "日付＋氏名でシフトと打刻を照合",
       "同じ日に複数シフトがある場合は最も早い開始〜最も遅い終了で表示",
