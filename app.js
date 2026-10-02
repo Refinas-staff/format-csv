@@ -826,7 +826,8 @@
       alignment: {
         vertical: "center",
         wrapText: true
-      }
+      },
+      ...(style.numFmt ? { numFmt: style.numFmt } : {})
     };
   }
 
