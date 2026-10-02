@@ -334,27 +334,6 @@
     }));
   }
 
-  function styleMatrixForGraph(rows, barSegments) {
-    const maxValue = Math.max(1, ...rows.slice(1).map(row => Number(row[1]) || 0));
-
-    return rows.map((row, r) => row.map((_, c) => {
-      const style = { fill: "FFFFFF", bold: r === 0 };
-
-      if (r === 0) {
-        style.fill = "EEF6EA";
-        return style;
-      }
-
-      if (c >= 3) {
-        const value = Number(row[1]) || 0;
-        const filledSegments = value > 0 ? Math.max(1, Math.round(value / maxValue * barSegments)) : 0;
-        const segmentIndex = c - 3;
-        style.fill = segmentIndex < filledSegments ? "2E7D32" : "F1F4F2";
-      }
-
-      return style;
-    }));
-  }
 
   function styleMatrixForTime(rows) {
     return rows.map((row, r) => row.map((_, c) => {
@@ -533,44 +512,12 @@
       ]);
     });
 
-    const allStoreTimeCounts = getCounts(timeMap, "全店舗合計", slotCount);
-    const graphBarSegments = 20;
-    const graphRows = [
-      ["時間帯", "全店舗合計", "", ...Array(graphBarSegments).fill("")],
-      ...slots.map((slot, index) => [
-        slot.label,
-        allStoreTimeCounts.slots[index],
-        "",
-        ...Array(graphBarSegments).fill("")
-      ])
-    ];
 
     const sheets = [
       { name: "概要", rows: summaryRows, styleMatrix: styleMatrixForSummary(summaryRows) },
       { name: "曜日別_30分", rows: weekdayRows, styleMatrix: styleMatrixForWeekdayHeatmap(weekdayRows) },
       { name: "週別_30分", rows: weekRows, styleMatrix: styleMatrixForDetail(weekRows) },
-      { name: "時間別_30分", rows: timeRows, styleMatrix: styleMatrixForTime(timeRows) },
-      {
-        name: "グラフ",
-        rows: graphRows,
-        styleMatrix: styleMatrixForGraph(graphRows, graphBarSegments),
-        colWidths: [
-          { wch: 18 }, { wch: 12 }, { wch: 2 },
-          ...Array.from({ length: graphBarSegments }, () => ({ wch: 2 }))
-        ],
-        embeddedCharts: [
-          {
-            type: "lineImage",
-            title: `全店舗｜30分別来館数（${monthText(year, monthIndex)}）`,
-            labels: slots.map(slot => slot.label.replace("〜", "-")),
-            values: allStoreTimeCounts.slots.slice(),
-            from: { col: 3, row: 1 },
-            to: { col: 20, row: 25 },
-            width: 1200,
-            height: 620
-          }
-        ]
-      }
+      { name: "時間別_30分", rows: timeRows, styleMatrix: styleMatrixForTime(timeRows) }
     ];
 
     const baseName = `来館数集計_${monthText(year, monthIndex)}`;
@@ -591,7 +538,7 @@
   window.CsvToolPatterns.push({
     id: "visit_summary",
     name: "来館数集計Excel",
-    description: "来店CSVから来館数を集計し、曜日×30分のヒートマップと来館時間グラフ付きExcelを作成します。",
+    description: "来店CSVから店舗別・曜日別・週別・30分別の来館数を集計し、曜日×30分をヒートマップ表示します。",
     type: "custom",
     outputType: "excel",
     mainFileLabel: "来館CSVを選択",
@@ -612,8 +559,7 @@
       "週別は月曜〜日曜単位で、月初・月末は対象月内の日数を分母に使用",
       "概要の1日平均は曜日別の対象日数、時間別の1日平均はその月の暦日数で算出",
       "店舗名は name / kaishamei の内容から自動判定",
-      "曜日別_30分は各行のピークを基準に濃淡表示するヒートマップ",
-      "グラフシートに全店舗合計の30分別来館推移を表示"
+      "曜日別_30分は各行のピークを基準に濃淡表示するヒートマップ"
     ],
     transformAll: buildVisitSummary
   });
