@@ -642,6 +642,10 @@
     if (style.bold) {
       element.style.fontWeight = "900";
     }
+
+    if (style.textColor) {
+      element.style.color = `#${style.textColor}`;
+    }
   }
 
   function renderEmptyPreview(message) {
@@ -739,7 +743,7 @@
     downloadWorkbook(0);
   }
 
-  function downloadWorkbook(workbookIndex) {
+  async function downloadWorkbook(workbookIndex) {
     if (!state.result || !state.result.sheets.length) return;
 
     if (!window.XLSX) {
@@ -758,25 +762,351 @@
     const workbookDefinition = workbookDefinitions[workbookIndex];
     if (!workbookDefinition) return;
 
-    const workbook = XLSX.utils.book_new();
+    try {
+      const workbook = XLSX.utils.book_new();
 
-    (workbookDefinition.sheets || []).forEach(sheet => {
-      const ws = XLSX.utils.aoa_to_sheet(sheet.rows);
+      (workbookDefinition.sheets || []).forEach(sheet => {
+        const ws = XLSX.utils.aoa_to_sheet(sheet.rows);
 
-      applyWorksheetStyles(ws, sheet);
-      ws["!cols"] = autoColumns(sheet.rows);
+        applyWorksheetStyles(ws, sheet);
+        ws["!cols"] = sheet.colWidths || autoColumns(sheet.rows);
 
-      XLSX.utils.book_append_sheet(workbook, ws, safeSheetName(sheet.name));
+        XLSX.utils.book_append_sheet(workbook, ws, safeSheetName(sheet.name));
+      });
+
+      const fallbackName = workbookDefinitions.length > 1
+        ? `${state.result.fileBaseName || "converted"}_${workbookIndex + 1}`
+        : (state.result.fileBaseName || "converted");
+      const dateStamp = getLocalDateStamp();
+      const outputFileName = workbookDefinition.fileName
+        || `${workbookDefinition.fileBaseName || fallbackName}_${dateStamp}.xlsx`;
+
+      const hasEmbeddedCharts = (workbookDefinition.sheets || []).some(
+        sheet => Array.isArray(sheet.embeddedCharts) && sheet.embeddedCharts.length
+      );
+
+      if (!hasEmbeddedCharts) {
+        XLSX.writeFile(workbook, outputFileName);
+        return;
+      }
+
+      if (!window.JSZip) {
+        XLSX.writeFile(workbook, outputFileName);
+        setStatus("Excelを作成しました。グラフシートはセルグラフで出力しています。", "success");
+        return;
+      }
+
+      setStatus("Excelにヒートマップとグラフを組み込んでいます…", "");
+
+      try {
+        const rawWorkbook = XLSX.write(workbook, {
+          bookType: "xlsx",
+          type: "array",
+          cellStyles: true
+        });
+
+        const finishedWorkbook = await embedChartImagesIntoWorkbook(
+          rawWorkbook,
+          workbookDefinition.sheets || []
+        );
+
+        downloadBlob(
+          finishedWorkbook,
+          outputFileName,
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+
+        setStatus("Excelを作成しました。ヒートマップと来館時間グラフを含めてダウンロードします。", "success");
+      } catch (chartError) {
+        console.warn("グラフ画像の埋め込みに失敗したため、セルグラフで出力します。", chartError);
+        XLSX.writeFile(workbook, outputFileName);
+        setStatus("Excelを作成しました。グラフ画像の代わりに、グラフシートのセルグラフで出力しています。", "success");
+      }
+    } catch (error) {
+      console.error(error);
+      setStatus(`Excelの作成に失敗しました。\n${error.message || error}`, "error");
+    }
+  }
+
+  async function embedChartImagesIntoWorkbook(workbookBytes, sheets) {
+    const zip = await JSZip.loadAsync(workbookBytes);
+    let drawingNumber = 0;
+    let imageNumber = 0;
+
+    for (let sheetIndex = 0; sheetIndex < sheets.length; sheetIndex++) {
+      const sheet = sheets[sheetIndex];
+      const charts = Array.isArray(sheet.embeddedCharts) ? sheet.embeddedCharts : [];
+      if (!charts.length) continue;
+
+      // 現在の来館分析では1シート1グラフ。複数指定された場合も順番に同じdrawingへ追加できるようにする。
+      drawingNumber += 1;
+      const drawingPath = `xl/drawings/drawing${drawingNumber}.xml`;
+      const drawingRelsPath = `xl/drawings/_rels/drawing${drawingNumber}.xml.rels`;
+      const sheetPath = `xl/worksheets/sheet${sheetIndex + 1}.xml`;
+      const sheetRelsPath = `xl/worksheets/_rels/sheet${sheetIndex + 1}.xml.rels`;
+
+      const sheetFile = zip.file(sheetPath);
+      if (!sheetFile) throw new Error(`${sheet.name} のExcelシート情報を取得できませんでした。`);
+
+      let sheetXml = await sheetFile.async("string");
+      let sheetRelsXml = zip.file(sheetRelsPath)
+        ? await zip.file(sheetRelsPath).async("string")
+        : `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`;
+
+      const sheetRelId = nextRelationshipId(sheetRelsXml);
+      sheetRelsXml = appendRelationship(
+        sheetRelsXml,
+        `<Relationship Id="${sheetRelId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing${drawingNumber}.xml"/>`
+      );
+      zip.file(sheetRelsPath, sheetRelsXml);
+
+      sheetXml = ensureRelationshipNamespace(sheetXml);
+      sheetXml = appendWorksheetDrawing(sheetXml, sheetRelId);
+      zip.file(sheetPath, sheetXml);
+
+      const drawingAnchors = [];
+      const drawingRelationships = [];
+
+      for (let chartIndex = 0; chartIndex < charts.length; chartIndex++) {
+        const chart = charts[chartIndex];
+        if (chart.type !== "lineImage") continue;
+
+        imageNumber += 1;
+        const imageBytes = await renderLineChartPng(chart);
+        zip.file(`xl/media/image${imageNumber}.png`, imageBytes);
+
+        const imageRelId = `rId${drawingRelationships.length + 1}`;
+        drawingRelationships.push(
+          `<Relationship Id="${imageRelId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image${imageNumber}.png"/>`
+        );
+        drawingAnchors.push(buildPictureAnchorXml(chart, imageRelId, chartIndex + 2));
+      }
+
+      zip.file(drawingPath, buildDrawingXml(drawingAnchors));
+      zip.file(drawingRelsPath, buildRelationshipsXml(drawingRelationships));
+      await ensureDrawingContentType(zip, drawingNumber);
+    }
+
+    return zip.generateAsync({
+      type: "arraybuffer",
+      compression: "DEFLATE",
+      compressionOptions: { level: 6 }
+    });
+  }
+
+  function nextRelationshipId(xml) {
+    const ids = Array.from(String(xml).matchAll(/Id="rId(\d+)"/g)).map(match => Number(match[1]));
+    return `rId${ids.length ? Math.max(...ids) + 1 : 1}`;
+  }
+
+  function appendRelationship(xml, relationshipXml) {
+    return String(xml).replace(/<\/Relationships>\s*$/, `${relationshipXml}</Relationships>`);
+  }
+
+  function buildRelationshipsXml(relationships) {
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+      relationships.join("") +
+      `</Relationships>`;
+  }
+
+  function ensureRelationshipNamespace(xml) {
+    if (/xmlns:r=/.test(xml)) return xml;
+    return xml.replace(
+      /<worksheet\b/,
+      `<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"`
+    );
+  }
+
+  function appendWorksheetDrawing(xml, relationshipId) {
+    if (/<drawing\b/.test(xml)) return xml;
+    return xml.replace(/<\/worksheet>\s*$/, `<drawing r:id="${relationshipId}"/></worksheet>`);
+  }
+
+  function buildDrawingXml(anchorXmlList) {
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" ` +
+      `xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ` +
+      `xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+      anchorXmlList.join("") +
+      `</xdr:wsDr>`;
+  }
+
+  function buildPictureAnchorXml(chart, imageRelId, shapeId) {
+    const from = chart.from || { col: 3, row: 1 };
+    const to = chart.to || { col: 20, row: 25 };
+    const widthEmu = Math.max(1, Number(chart.width) || 1200) * 9525;
+    const heightEmu = Math.max(1, Number(chart.height) || 620) * 9525;
+
+    return `<xdr:twoCellAnchor editAs="oneCell">` +
+      `<xdr:from><xdr:col>${from.col}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${from.row}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>` +
+      `<xdr:to><xdr:col>${to.col}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${to.row}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>` +
+      `<xdr:pic>` +
+        `<xdr:nvPicPr><xdr:cNvPr id="${shapeId}" name="来館時間グラフ"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr>` +
+        `<xdr:blipFill><a:blip r:embed="${imageRelId}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>` +
+        `<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${widthEmu}" cy="${heightEmu}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>` +
+      `</xdr:pic>` +
+      `<xdr:clientData/>` +
+      `</xdr:twoCellAnchor>`;
+  }
+
+  async function ensureDrawingContentType(zip, drawingNumber) {
+    const path = "[Content_Types].xml";
+    const file = zip.file(path);
+    if (!file) throw new Error("ExcelのContent Typesを取得できませんでした。");
+
+    let xml = await file.async("string");
+    const partName = `/xl/drawings/drawing${drawingNumber}.xml`;
+
+    if (!xml.includes(`PartName="${partName}"`)) {
+      xml = xml.replace(
+        /<\/Types>\s*$/,
+        `<Override PartName="${partName}" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>`
+      );
+    }
+
+    if (!/Extension="png"/i.test(xml)) {
+      xml = xml.replace(
+        /<Types([^>]*)>/,
+        `<Types$1><Default Extension="png" ContentType="image/png"/>`
+      );
+    }
+
+    zip.file(path, xml);
+  }
+
+  async function renderLineChartPng(chart) {
+    const width = Math.max(800, Number(chart.width) || 1200);
+    const height = Math.max(420, Number(chart.height) || 620);
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext("2d");
+    const labels = Array.isArray(chart.labels) ? chart.labels : [];
+    const values = Array.isArray(chart.values) ? chart.values.map(value => Number(value) || 0) : [];
+
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, width, height);
+
+    const margin = { left: 80, right: 34, top: 82, bottom: 92 };
+    const plotWidth = width - margin.left - margin.right;
+    const plotHeight = height - margin.top - margin.bottom;
+    const maxValue = Math.max(1, ...values);
+    const yMax = niceAxisMax(maxValue);
+    const yTicks = 5;
+
+    ctx.fillStyle = "#17201B";
+    ctx.font = '700 28px Meiryo, "Hiragino Kaku Gothic ProN", sans-serif';
+    ctx.fillText(String(chart.title || "30分別来館数"), margin.left, 44);
+
+    ctx.font = '14px Meiryo, "Hiragino Kaku Gothic ProN", sans-serif';
+    ctx.fillStyle = "#68736B";
+    ctx.fillText("来館数", 18, margin.top - 18);
+
+    ctx.strokeStyle = "#E2E8E4";
+    ctx.lineWidth = 1;
+    ctx.fillStyle = "#5F6B63";
+    ctx.font = '13px Meiryo, "Hiragino Kaku Gothic ProN", sans-serif';
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+
+    for (let i = 0; i <= yTicks; i++) {
+      const value = yMax * (yTicks - i) / yTicks;
+      const y = margin.top + plotHeight * i / yTicks;
+      ctx.beginPath();
+      ctx.moveTo(margin.left, y);
+      ctx.lineTo(width - margin.right, y);
+      ctx.stroke();
+      ctx.fillText(String(Math.round(value)), margin.left - 12, y);
+    }
+
+    const pointX = index => labels.length <= 1
+      ? margin.left
+      : margin.left + plotWidth * index / (labels.length - 1);
+    const pointY = value => margin.top + plotHeight * (1 - value / yMax);
+
+    if (values.length) {
+      ctx.beginPath();
+      values.forEach((value, index) => {
+        const x = pointX(index);
+        const y = pointY(value);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = "#2E7D32";
+      ctx.lineWidth = 4;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.stroke();
+
+      values.forEach((value, index) => {
+        const x = pointX(index);
+        const y = pointY(value);
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = "#2E7D32";
+        ctx.fill();
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      });
+    }
+
+    ctx.fillStyle = "#5F6B63";
+    ctx.font = '12px Meiryo, "Hiragino Kaku Gothic ProN", sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    labels.forEach((label, index) => {
+      if (index % 2 !== 0 && index !== labels.length - 1) return;
+      const shortLabel = String(label).split("-")[0];
+      ctx.fillText(shortLabel, pointX(index), margin.top + plotHeight + 16);
     });
 
-    const fallbackName = workbookDefinitions.length > 1
-      ? `${state.result.fileBaseName || "converted"}_${workbookIndex + 1}`
-      : (state.result.fileBaseName || "converted");
-    const dateStamp = getLocalDateStamp();
-    const outputFileName = workbookDefinition.fileName
-      || `${workbookDefinition.fileBaseName || fallbackName}_${dateStamp}.xlsx`;
+    if (values.length) {
+      const peakValue = Math.max(...values);
+      const peakIndex = values.indexOf(peakValue);
+      const x = pointX(peakIndex);
+      const y = pointY(peakValue);
+      const label = `${labels[peakIndex] || ""}  ${peakValue}人`;
 
-    XLSX.writeFile(workbook, outputFileName);
+      ctx.font = '700 14px Meiryo, "Hiragino Kaku Gothic ProN", sans-serif';
+      const textWidth = ctx.measureText(label).width;
+      const boxWidth = textWidth + 24;
+      const boxHeight = 34;
+      const boxX = Math.min(Math.max(x - boxWidth / 2, margin.left), width - margin.right - boxWidth);
+      const boxY = Math.max(margin.top + 6, y - 52);
+
+      ctx.fillStyle = "#E8F5E9";
+      ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+      ctx.strokeStyle = "#81C784";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+      ctx.fillStyle = "#1B5E20";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(label, boxX + boxWidth / 2, boxY + boxHeight / 2);
+    }
+
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(async blob => {
+        if (!blob) return reject(new Error("グラフ画像を作成できませんでした。"));
+        resolve(new Uint8Array(await blob.arrayBuffer()));
+      }, "image/png");
+    });
+  }
+
+  function niceAxisMax(value) {
+    const raw = Math.max(1, Number(value) || 1);
+    const magnitude = Math.pow(10, Math.floor(Math.log10(raw)));
+    const normalized = raw / magnitude;
+    let nice = 10;
+
+    if (normalized <= 1) nice = 1;
+    else if (normalized <= 2) nice = 2;
+    else if (normalized <= 5) nice = 5;
+
+    return nice * magnitude;
   }
 
   function getLocalDateStamp() {
@@ -815,7 +1145,8 @@
       },
       font: {
         bold: !!style.bold,
-        name: "Meiryo"
+        name: "Meiryo",
+        ...(style.textColor ? { color: { rgb: style.textColor } } : {})
       },
       border: {
         top: { style: "thin", color: { rgb: "D9DEE8" } },
